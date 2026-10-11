@@ -1,5 +1,11 @@
 """Persistent human player profiles and completed-game statistics."""
 import json
+import hashlib
+import hmac
+import os
+import secrets
+import smtplib
+from email.message import EmailMessage
 import sqlite3
 import threading
 import time
@@ -17,7 +23,100 @@ class PlayerStats:
             score INTEGER NOT NULL, penalties INTEGER NOT NULL, turns INTEGER NOT NULL,
             scores TEXT NOT NULL, result TEXT NOT NULL, created REAL NOT NULL,
             FOREIGN KEY(player_id) REFERENCES players(id))""")
+        self.db.execute("CREATE TABLE IF NOT EXISTS auth_codes (email TEXT PRIMARY KEY, digest TEXT NOT NULL, expires REAL NOT NULL, attempts INTEGER NOT NULL, sent REAL NOT NULL, name TEXT)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS auth_sessions (token_hash TEXT PRIMARY KEY, player_id TEXT NOT NULL, expires REAL NOT NULL)")
+        columns={r[1] for r in self.db.execute("PRAGMA table_info(players)")}
+        if "email" not in columns:self.db.execute("ALTER TABLE players ADD COLUMN email TEXT")
+        self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_players_email ON players(email) WHERE email IS NOT NULL")
         self.db.commit()
+
+
+    @staticmethod
+    def normalize_email(email):
+        if not isinstance(email,str):
+            raise ValueError("Invalid email")
+        email=email.strip().lower()
+        if len(email)>254 or "@" not in email or any(c.isspace() for c in email):
+            raise ValueError("Invalid email")
+        local,domain=email.rsplit("@",1)
+        if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
+            raise ValueError("Invalid email")
+        return email
+
+    def request_code(self,email,name=None):
+        email=self.normalize_email(email)
+        if name is not None:
+            if not isinstance(name,str) or not 1<=len(name.strip())<=40:
+                raise ValueError("Name must be 1–40 characters")
+            name=name.strip()
+        host=os.getenv("QWIXX_SMTP_HOST")
+        sender=os.getenv("QWIXX_SMTP_FROM")
+        if not host or not sender:
+            raise RuntimeError("Email verification is not configured on the server")
+        now=time.time()
+        with self.lock:
+            previous=self.db.execute("SELECT sent FROM auth_codes WHERE email=?",(email,)).fetchone()
+            if previous and now-previous[0]<60:
+                raise ValueError("Please wait 60 seconds before requesting another code")
+            code=f"{secrets.randbelow(1000000):06d}"
+            digest=hashlib.sha256((email+":"+code).encode()).hexdigest()
+            message=EmailMessage()
+            message["From"]=sender;message["To"]=email;message["Subject"]="Qwixx AI verification code"
+            message.set_content(f"Your Qwixx AI sign-in code is {code}. It expires in 10 minutes. If you did not request this, ignore this message.")
+            port=int(os.getenv("QWIXX_SMTP_PORT","587"))
+            if os.getenv("QWIXX_SMTP_SSL","false").lower()=="true":
+                smtp=smtplib.SMTP_SSL(host,port,timeout=15)
+            else:
+                smtp=smtplib.SMTP(host,port,timeout=15)
+            with smtp:
+                if os.getenv("QWIXX_SMTP_SSL","false").lower()!="true":
+                    smtp.starttls()
+                user=os.getenv("QWIXX_SMTP_USER")
+                if user:smtp.login(user,os.getenv("QWIXX_SMTP_PASSWORD",""))
+                smtp.send_message(message)
+            self.db.execute("INSERT OR REPLACE INTO auth_codes VALUES (?,?,?,?,?,?)",(email,digest,now+600,0,now,name))
+            self.db.commit()
+        return {"sent":True}
+
+    def verify_code(self,email,code):
+        email=self.normalize_email(email)
+        if not isinstance(code,str) or len(code)!=6 or not code.isdigit():
+            raise ValueError("Invalid verification code")
+        now=time.time()
+        with self.lock:
+            row=self.db.execute("SELECT digest,expires,attempts,name FROM auth_codes WHERE email=?",(email,)).fetchone()
+            if not row or now>row[1] or row[2]>=5:
+                raise ValueError("Code expired or too many attempts; request another")
+            digest=hashlib.sha256((email+":"+code).encode()).hexdigest()
+            if not hmac.compare_digest(digest,row[0]):
+                self.db.execute("UPDATE auth_codes SET attempts=attempts+1 WHERE email=?",(email,))
+                self.db.commit()
+                raise ValueError("Incorrect code")
+            player=self.db.execute("SELECT id,name FROM players WHERE email=?",(email,)).fetchone()
+            if player is None:
+                name=row[3] or email.split("@")[0][:40]
+                existing=self.db.execute("SELECT id FROM players WHERE name=? COLLATE NOCASE",(name,)).fetchone()
+                if existing:name=(name[:31]+"-"+secrets.token_hex(3))
+                pid=uuid.uuid4().hex
+                self.db.execute("INSERT INTO players (id,name,created,email) VALUES (?,?,?,?)",(pid,name,now,email))
+                player=(pid,name)
+            self.db.execute("DELETE FROM auth_codes WHERE email=?",(email,))
+            token=secrets.token_urlsafe(32)
+            self.db.execute("INSERT INTO auth_sessions VALUES (?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),player[0],now+30*86400))
+            self.db.commit()
+            return {"player":{"id":player[0],"name":player[1]},"token":token}
+
+    def authenticate(self,token):
+        if not token:return None
+        digest=hashlib.sha256(token.encode()).hexdigest()
+        with self.lock:
+            row=self.db.execute("SELECT player_id FROM auth_sessions WHERE token_hash=? AND expires>?",(digest,time.time())).fetchone()
+            return row[0] if row else None
+
+    def logout(self,token):
+        with self.lock:
+            self.db.execute("DELETE FROM auth_sessions WHERE token_hash=?",(hashlib.sha256(token.encode()).hexdigest(),))
+            self.db.commit()
 
     def profiles(self):
         with self.lock:
