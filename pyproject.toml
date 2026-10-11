@@ -8,4 +8,15 @@ requires-python='>=3.10'
 dependencies=['numpy>=1.24','torch>=2.1']
 [project.optional-dependencies]
 gym=['gymnasium>=0.29']
-dev=['pytest>=8','gymnasium>=0.29']
+dev=['pytest>=8','gymnasium>=0.29','ruff>=0.14']
+
+[tool.ruff]
+target-version='py310'
+line-length=100
+
+[tool.ruff.lint]
+select=['E','F','I']
+ignore=['E701','E702','E731']
+
+[tool.ruff.format]
+quote-style='single'
