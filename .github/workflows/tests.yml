@@ -121,4 +121,5 @@ jobs:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           echo "$RESULTS"
-          test "$RESULTS" = "success success success success success"
+          for result in $RESULTS; do test "$result" = success || exit 1; done
+          test "$(wc -w <<< "$RESULTS")" -eq 5
