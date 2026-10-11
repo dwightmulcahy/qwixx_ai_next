@@ -99,7 +99,7 @@ jobs:
           path: all-tests.xml
           if-no-files-found: ignore
   docker:
-    name: Docker build and health smoke test
+    name: Docker API integration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,16 +112,40 @@ jobs:
           tags: qwixx-ai:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Run and verify container health
+      - name: Run and verify container APIs
         run: |
           set -euo pipefail
           docker run -d --name qwixx-ci -p 127.0.0.1:8765:8765 -e QWIXX_DATA=/app/runs qwixx-ai:ci
           trap 'docker logs qwixx-ci || true; docker rm -f qwixx-ci || true' EXIT
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --max-time 5 http://127.0.0.1:8765/health; then exit 0; fi
+            if curl --fail --silent --max-time 5 http://127.0.0.1:8765/health >/tmp/health.json; then break; fi
             sleep 3
           done
-          exit 1
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          health=json.loads(Path('/tmp/health.json').read_text())
+          assert health['healthy'] is True
+          PY
+          curl --fail --silent http://127.0.0.1:8765/api/stats >/tmp/stats.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          stats=json.loads(Path('/tmp/stats.json').read_text())
+          for key in ('games','updates','replay_size','model_version','database_games'):
+              assert key in stats, key
+          PY
+          curl --fail --silent -X POST http://127.0.0.1:8765/reset \
+            -H 'Content-Type: application/json' \
+            -d '{"difficulty":"intermediate"}' >/tmp/session.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          session=json.loads(Path('/tmp/session.json').read_text())
+          assert session['session_id']
+          assert session['difficulty']=='intermediate'
+          assert 'legal' in session and 'scores' in session
+          PY
   required:
     name: CI gate
     if: always()
