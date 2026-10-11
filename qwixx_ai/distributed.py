@@ -26,10 +26,13 @@ class Coordinator:
         self.pending={};self.replay=deque(maxlen=50000)
         self.db=sqlite3.connect(ROOT/'training.sqlite3',check_same_thread=False,timeout=20)
         self.db.execute('PRAGMA journal_mode=WAL')
-        self.db.execute('CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY, source TEXT NOT NULL, scores TEXT NOT NULL, moves TEXT, created REAL NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY, source TEXT NOT NULL, scores TEXT NOT NULL, moves TEXT, created REAL NOT NULL, seed INTEGER)')
+        columns={row[1] for row in self.db.execute('PRAGMA table_info(games)')}
+        if 'seed' not in columns:self.db.execute('ALTER TABLE games ADD COLUMN seed INTEGER')
         self.db.commit()
         self.recent_games=deque(maxlen=200)
         self.started_at=time.time()
+        self._restore_replay()
         self.games=0;self.browser_games=0;self.central_games=0;self.updates=0
         self.best=-1.;self.version=0;self.last_loss=None;self.last_eval=None
         self.sessions={};self.promoted_at=None;self.best_model=None;self.league=deque(maxlen=6)
@@ -95,10 +98,11 @@ class Coordinator:
                 transitions.append((s,a,reward,observe(game),True,mask(game)))
         with self.lock:
             self.replay.extend(transitions);self.games+=1;self.browser_games+=1
-            self._record('browser',scores,moves)
+            self._record('browser',scores,moves,seed)
         return {'accepted':True,'scores':scores,'transitions':len(transitions)}
     def central_rollout(self):
-        g=Game(seed=self.rng.randrange(2**31));last=[None]*4;transitions=[]
+        seed=self.rng.randrange(2**31)
+        g=Game(seed=seed);last=[None]*4;transitions=[];moves=[]
         while not g.done:
             who=g.actor
             if last[who] is not None:
@@ -107,7 +111,7 @@ class Coordinator:
             with self.lock:
                 policy=self.rng.choice(list(self.league)) if self.league and self.rng.random()<.15 else (self.best_model if self.best_model is not None and self.rng.random()<.35 else self.model)
                 a=choose(policy,g,epsilon=.18) if self.rng.random()<.65 else (heuristic(g) if self.rng.random()<.8 else random_agent(g))
-            last[who]=(observe(g).copy(),encode(a),g.scores()[who]);g.step(a)
+            last[who]=(observe(g).copy(),encode(a),g.scores()[who]);moves.append(encode(a));g.step(a)
         scores=g.scores()
         for who,item in enumerate(last):
             if item is not None:
@@ -115,11 +119,32 @@ class Coordinator:
                 transitions.append((s,a,(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1),observe(g),True,mask(g)))
         with self.lock:
             self.replay.extend(transitions);self.games+=1;self.central_games+=1
-            self._record('central',scores,None)
-    def _record(self,source,scores,moves):
-        self.db.execute('INSERT INTO games(source,scores,moves,created) VALUES(?,?,?,?)',(source,json.dumps(scores),json.dumps(moves) if moves is not None else None,time.time()))
+            self._record('central',scores,moves,seed)
+    def _record(self,source,scores,moves,seed=None):
+        self.db.execute('INSERT INTO games(source,scores,moves,created,seed) VALUES(?,?,?,?,?)',(source,json.dumps(scores),json.dumps(moves) if moves is not None else None,time.time(),seed))
         self.db.commit()
         self.recent_games.append({'source':source,'scores':scores})
+    def _restore_replay(self):
+        # Reconstruct trajectories from server-validated deterministic game logs.
+        rows=self.db.execute('SELECT seed,moves FROM games WHERE seed IS NOT NULL AND moves IS NOT NULL ORDER BY id DESC LIMIT 100').fetchall()
+        for seed,encoded in reversed(rows):
+            try:
+                g=Game(seed=seed);last=[None]*g.n;transitions=[]
+                for code in json.loads(encoded):
+                    if g.done or not mask(g)[code]:raise ValueError('Incompatible game log')
+                    who=g.actor
+                    if last[who] is not None:
+                        state,action,start=last[who]
+                        transitions.append((state,action,(g.scores()[who]-start)/25,observe(g),False,mask(g)))
+                    last[who]=(observe(g).copy(),code,g.scores()[who]);g.step(decode(code))
+                if not g.done:continue
+                scores=g.scores()
+                for who,item in enumerate(last):
+                    if item is not None:
+                        state,action,start=item
+                        transitions.append((state,action,(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1),observe(g),True,mask(g)))
+                self.replay.extend(transitions)
+            except (ValueError,TypeError,IndexError):continue
     def history(self,limit=100):
         with self.lock:
             rows=self.db.execute('SELECT source,scores,created FROM games ORDER BY id DESC LIMIT ?',(min(max(int(limit),1),500),)).fetchall()
@@ -222,14 +247,14 @@ function inference(input){let v=input;for(let li=0;li<policy.layers.length;li++)
 async function runGame(){
  if(!policy)await refreshPolicy();
  const job=await (await fetch('/api/job')).json();
- let rows=Array.from({length:4},()=>Array.from({length:4},()=>[])),pen=[0,0,0,0],locks=new Set(),active=0,phase=0,marks=0,turn=0,actions=[];
+ let rows=Array.from({length:4},()=>Array.from({length:4},()=>[])),pen=[0,0,0,0],locks=new Set(),whiteLocks=new Set(),active=0,phase=0,marks=0,turn=0,actions=[];
  const rolls=job.rolls;let dice=rolls[0];
  function actor(){return phase===0||phase===4?active:(active+phase)%4}
  function legal(){let who=actor(),candidate=[];
   if(phase===4){for(let c=0;c<4;c++)for(let w=0;w<2;w++)candidate.push([c,dice[w]+dice[c+2]])}
   else for(let c=0;c<4;c++)candidate.push([c,dice[0]+dice[1]]);
   let out=[];
-  for(const [c,n] of candidate){if(locks.has(c))continue;let idx=order[c].indexOf(n),row=rows[who][c];if(idx<0||row.length&&idx<=order[c].indexOf(row[row.length-1]))continue;
+  for(const [c,n] of candidate){if(locks.has(c)&&!(phase<4&&whiteLocks.has(c)))continue;let idx=order[c].indexOf(n),row=rows[who][c];if(idx<0||row.length&&idx<=order[c].indexOf(row[row.length-1]))continue;
    if(idx===10){if(row.length>=5)out.push([c,n,true]);}else out.push([c,n,false]);}
   return out;
  }
@@ -238,14 +263,14 @@ async function runGame(){
   for(let c=0;c<4;c++)v.push(locks.has(c)?1:0);for(let x of dice)v.push(x/6);
   v.push(active/4,actor()/4,phase/5,Math.min(turn/100,1),marks/2);return v;}
  for(let t=0;t<1000;t++){
-  if(locks.size>=2||pen.some(x=>x>=4))break;
+  if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;
   const options=[null,...legal()];let a;
   if(Math.random()<.18)a=options[Math.floor(Math.random()*options.length)];
   else {const q=inference(observe());a=options.reduce((best,x)=>q[encode(x)]>q[encode(best)]?x:best,null);}
-  actions.push(encode(a));let who=actor();if(a){rows[who][a[0]].push(a[1]);if(a[2])locks.add(a[0]);if(who===active)marks++}
+  actions.push(encode(a));let who=actor();if(a){rows[who][a[0]].push(a[1]);if(a[2]){locks.add(a[0]);if(phase<4)whiteLocks.add(a[0]);}if(who===active)marks++}
   if(phase===4&&marks===0)pen[active]++;
   if(locks.size>=2||pen.some(x=>x>=4))break;
-  if(phase<4)phase++;else{turn++;active=(active+1)%4;phase=0;marks=0;dice=rolls[turn];if(!dice)throw Error('Dice stream exhausted')}
+  if(phase<4){phase++;if(phase===4)whiteLocks.clear();}else{turn++;active=(active+1)%4;phase=0;marks=0;whiteLocks.clear();dice=rolls[turn];if(!dice)throw Error('Dice stream exhausted')}
  }
  const r=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:job.ticket,moves:actions})});
  if(!r.ok)throw Error((await r.json()).error||'Upload failed');completed++;
