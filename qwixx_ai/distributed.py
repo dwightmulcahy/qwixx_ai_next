@@ -12,6 +12,7 @@ from .model import network,choose,save,load
 from .agents import heuristic,random_agent
 from .tournament import evaluate
 from .web import HTML as GAME_HTML, Session
+from .player_stats import PlayerStats
 
 ROOT=Path(os.getenv('QWIXX_DATA', Path.cwd()/'runs'))
 ROOT.mkdir(parents=True,exist_ok=True)
@@ -36,6 +37,7 @@ class Coordinator:
         self._restore_replay()
         self.games=0;self.browser_games=0;self.central_games=0;self.updates=0
         self.best=-1.;self.version=0;self.last_loss=None;self.last_eval=None
+        self.player_stats=PlayerStats(ROOT/'players.sqlite3')
         self.sessions={};self.promoted_at=None;self.best_model=None;self.league=deque(maxlen=6)
         self.obs_size=len(observe(Game()))
         self.model=network(self.obs_size);self.target=network(self.obs_size)
@@ -208,27 +210,30 @@ class Coordinator:
                 self.league.append(copy.deepcopy(self.best_model))
                 self.promoted_at=time.time()
             with self.log.open('a') as f:f.write(json.dumps({'time':time.time(),**self.stats()})+'\n')
-    def new_session(self,difficulty='champion'):
+    def new_session(self,difficulty='champion',player_id=None):
         with self.lock:
-            for key,(_,updated) in list(self.sessions.items()):
+            for key,(_,updated,_) in list(self.sessions.items()):
                 if time.time()-updated>86400:self.sessions.pop(key,None)
             if len(self.sessions)>=200:raise ValueError('Too many game sessions')
+            if player_id is not None:self.player_stats.profile(player_id)
             sid=uuid.uuid4().hex
             model=self.best_model
             session=Session(model=model,difficulty=difficulty)
             session.advance()
-            self.sessions[sid]=(session,time.time())
+            self.sessions[sid]=(session,time.time(),player_id)
             return {'session_id':sid,**session.view()}
     def session_action(self,sid,action):
         with self.lock:
             entry=self.sessions.get(sid)
             if not entry:raise ValueError('Session expired; start a new game')
-            session,_=entry
+            session,_,player_id=entry
             with session.lock:
                 session.game.step(action)
                 session.advance()
                 view=session.view()
-            self.sessions[sid]=(session,time.time())
+                if session.game.done and player_id is not None:
+                    self.player_stats.record(sid,player_id,session.difficulty,session.game)
+            self.sessions[sid]=(session,time.time(),player_id)
             return {'session_id':sid,**view}
     def policy_export(self):
         # Export the promoted model for local JS inference in browser workers.
@@ -360,6 +365,11 @@ class Handler(BaseHTTPRequestHandler):
                 try:limit=int(self.path.split('limit=',1)[1].split('&',1)[0]) if 'limit=' in self.path else 100
                 except ValueError:limit=100
                 return self.reply({'games':self.coord.history(limit)})
+            if self.path=='/api/players':return self.reply({'players':self.coord.player_stats.profiles()})
+            if self.path.startswith('/api/player-stats?'):
+                from urllib.parse import parse_qs, urlsplit
+                query=parse_qs(urlsplit(self.path).query)
+                return self.reply(self.coord.player_stats.stats(query.get('player_id',[''])[0],query.get('difficulty',[None])[0]))
             if self.path=='/api/policy':return self.reply(self.coord.policy_export())
             if self.path=='/api/job':
                 if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
@@ -388,10 +398,16 @@ class Handler(BaseHTTPRequestHandler):
                 else:raise ValueError('Unknown command')
                 return self.reply({'ok':True,'paused':self.coord.paused.is_set()})
             except (ValueError,TypeError) as exc:return self.reply({'error':str(exc)},400)
+        if self.path=='/api/players':
+            try:
+                n=int(self.headers.get('Content-Length','0'))
+                if n<1 or n>512:raise ValueError('Invalid body size')
+                return self.reply(self.coord.player_stats.create_profile(json.loads(self.rfile.read(n)).get('name')))
+            except (ValueError,TypeError) as e:return self.reply({'error':str(e)},400)
         if self.path in ('/reset','/move'):
             try:
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
-                if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'))
+                if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'),data.get('player_id'))
                 else:
                     a=data.get('action');a=None if a is None else tuple(a)
                     result=self.coord.session_action(data.get('session_id',''),a)
