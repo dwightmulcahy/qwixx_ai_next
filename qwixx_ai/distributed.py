@@ -1,5 +1,5 @@
 """Centralized training coordinator with browser-generated, server-verified games."""
-import json, os, random, secrets, threading, time, copy, uuid, sqlite3, tempfile, signal
+import json, os, random, secrets, threading, time, copy, uuid, sqlite3
 from collections import deque
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
