@@ -241,19 +241,25 @@ class Coordinator:
             return {'version':self.version,'layers':layers,'observation_size':self.obs_size}
     def stats(self):
         return {'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
-    def run(self):
-        last=time.monotonic();cycles=0
+    def run_rollouts(self):
         while not self.stop.is_set():
-            if self.paused.wait(.05):continue
+            if self.paused.is_set():
+                self.stop.wait(.1);continue
+            try:self.central_rollout()
+            except Exception as exc:
+                print('Rollout error:',repr(exc),flush=True);self.stop.wait(2)
+    def run(self):
+        last=time.monotonic()
+        while not self.stop.is_set():
+            if self.paused.is_set():
+                self.stop.wait(.1);continue
             try:
-                self.central_rollout()
                 for _ in range(3):self.learn()
-                cycles+=1
                 if time.monotonic()-last>60:
                     self.checkpoint();last=time.monotonic()
-                time.sleep(.02)
+                self.stop.wait(.05)
             except Exception as exc:
-                print('Coordinator error:',repr(exc),flush=True);time.sleep(2)
+                print('Coordinator error:',repr(exc),flush=True);self.stop.wait(2)
 
 WORKER_JS=r'''
 let enabled=false,completed=0,busy=false,policy=null;
@@ -386,12 +392,17 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--host',default='0.0.0.0');p.add_argument('--port',type=int,default=8765)
     args=p.parse_args();torch.set_num_threads(max(1,int(os.getenv('QWIXX_TORCH_THREADS','2'))))
     c=Coordinator();Handler.coord=c
-    threading.Thread(target=c.run,daemon=True,name='central-trainer').start()
+    trainer=threading.Thread(target=c.run,daemon=True,name='central-trainer');trainer.start()
+    worker_count=max(1,min(4,int(os.getenv('QWIXX_CENTRAL_WORKERS','2'))))
+    workers=[threading.Thread(target=c.run_rollouts,daemon=True,name=f'rollout-{i}') for i in range(worker_count)]
+    for worker in workers:worker.start()
     print(f'Qwixx distributed trainer on {args.host}:{args.port}',flush=True)
     server=ThreadingHTTPServer((args.host,args.port),Handler)
     try:server.serve_forever(poll_interval=.5)
     except KeyboardInterrupt:pass
     finally:
         c.stop.set();server.server_close()
+        for worker in workers:worker.join(timeout=10)
+        trainer.join(timeout=10)
         c.checkpoint();c.db.close()
 if __name__=='__main__':main()

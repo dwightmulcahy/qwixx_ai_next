@@ -10,6 +10,7 @@ services:
       TZ: America/Costa_Rica
       QWIXX_DATA: /app/runs
       QWIXX_TORCH_THREADS: "2"
+      QWIXX_CENTRAL_WORKERS: "2"
       QWIXX_MAX_BROWSER_WORKERS: "2"
       PYTHONUNBUFFERED: "1"
     volumes:

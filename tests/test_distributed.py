@@ -128,3 +128,14 @@ process.stdin.on('end',async()=>{
     assert moves['ticket']==job['ticket']
     assert c.accept(moves)['accepted']
     c.db.close()
+
+
+def test_central_rollout_generates_valid_persisted_game(tmp_path,monkeypatch):
+    from qwixx_ai import distributed
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    c.central_rollout()
+    assert c.central_games==1
+    assert c.stats()['database_games']==1
+    assert len(c.replay)==len(c.priorities)>0
+    c.db.close()
