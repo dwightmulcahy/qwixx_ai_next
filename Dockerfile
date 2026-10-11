@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir --upgrade pip && \
 RUN mkdir -p /app/runs && chown -R 10001:10001 /app
 USER 10001:10001
 EXPOSE 8765
-CMD ["python","-m","qwixx_ai.web","--host","0.0.0.0","--port","8765"]
+CMD ["python","-m","qwixx_ai.distributed","--host","0.0.0.0","--port","8765"]

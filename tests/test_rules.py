@@ -199,3 +199,20 @@ def test_rulebook_faq_is_embedded_in_web_interface():
                    'left to right','misthrow penalty','padlock','fourth misthrow penalty',
                    'highest score wins'):
         assert phrase in HTML
+
+
+def test_color_dice_removed_and_lock_bonus():
+    g=Game(seed=15)
+    g.boards[0].rows[0]=[2,3,4,5,6]
+    g.dice=(6,6,6,6,6,6)
+    g.step((0,12,True))
+    assert 0 not in g.available_colors
+    assert g.boards[0].score(g.locks)==28
+
+
+def test_double_dqn_model_shapes():
+    from qwixx_ai.model import network
+    import torch
+    from qwixx_ai.env import observe
+    model=network(len(observe(Game())))
+    assert model(torch.from_numpy(observe(Game()))).shape==(89,)

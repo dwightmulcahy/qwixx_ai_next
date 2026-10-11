@@ -1,5 +1,5 @@
 """Centralized training coordinator with browser-generated, server-verified games."""
-import json, os, random, secrets, threading, time, copy, uuid
+import json, os, random, secrets, threading, time, copy, uuid, sqlite3, tempfile, signal
 from collections import deque
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -17,11 +17,19 @@ ROOT=Path(os.getenv('QWIXX_DATA','/app/runs'))
 ROOT.mkdir(parents=True,exist_ok=True)
 WORKER_TOKEN=os.getenv('QWIXX_WORKER_TOKEN','')
 MAX_BODY=350_000
+MAX_PENDING=500
+
 
 class Coordinator:
     def __init__(self):
         self.lock=threading.RLock();self.rng=random.Random()
         self.pending={};self.replay=deque(maxlen=50000)
+        self.db=sqlite3.connect(ROOT/'training.sqlite3',check_same_thread=False,timeout=20)
+        self.db.execute('PRAGMA journal_mode=WAL')
+        self.db.execute('CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY, source TEXT NOT NULL, scores TEXT NOT NULL, moves TEXT, created REAL NOT NULL)')
+        self.db.commit()
+        self.recent_games=deque(maxlen=200)
+        self.started_at=time.time()
         self.games=0;self.browser_games=0;self.central_games=0;self.updates=0
         self.best=-1.;self.version=0;self.last_loss=None;self.last_eval=None
         self.sessions={};self.promoted_at=None;self.best_model=None;self.league=deque(maxlen=6)
@@ -39,11 +47,23 @@ class Coordinator:
                 self.best=float(torch.load(best_path,map_location='cpu',weights_only=True).get('win_share',-1))
             except Exception as exc:print('Best checkpoint load failed:',exc,flush=True)
         self.optimizer=torch.optim.Adam(self.model.parameters(),lr=3e-4)
+        state_path=ROOT/'trainer.pt'
+        if state_path.exists():
+            try:
+                state=torch.load(state_path,map_location='cpu',weights_only=True)
+                self.optimizer.load_state_dict(state['optimizer'])
+                self.updates=state.get('updates',0)
+                self.games=state.get('games',0)
+                self.version=state.get('version',0)
+            except Exception as exc:print('Trainer state recovery failed:',exc,flush=True)
         self.stop=threading.Event()
         self.log=ROOT/'metrics.jsonl'
     def ticket(self):
         with self.lock:
-            if len(self.pending)>500:raise ValueError('Too many outstanding tickets')
+            now=time.time()
+            for key,(_,issued) in list(self.pending.items()):
+                if now-issued>900:self.pending.pop(key,None)
+            if len(self.pending)>=MAX_PENDING:raise ValueError('Too many outstanding tickets')
             token=secrets.token_urlsafe(24);seed=self.rng.randrange(2**31)
             self.pending[token]=(seed,time.time())
             return {'ticket':token,'seed':seed,'max_moves':1000,'policy_version':self.version}
@@ -75,6 +95,7 @@ class Coordinator:
                 transitions.append((s,a,reward,observe(game),True,mask(game)))
         with self.lock:
             self.replay.extend(transitions);self.games+=1;self.browser_games+=1
+            self._record('browser',scores,moves)
         return {'accepted':True,'scores':scores,'transitions':len(transitions)}
     def central_rollout(self):
         g=Game(seed=self.rng.randrange(2**31));last=[None]*4;transitions=[]
@@ -92,7 +113,17 @@ class Coordinator:
             if item is not None:
                 s,a,start=item
                 transitions.append((s,a,(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1),observe(g),True,mask(g)))
-        with self.lock:self.replay.extend(transitions);self.games+=1;self.central_games+=1
+        with self.lock:
+            self.replay.extend(transitions);self.games+=1;self.central_games+=1
+            self._record('central',scores,None)
+    def _record(self,source,scores,moves):
+        self.db.execute('INSERT INTO games(source,scores,moves,created) VALUES(?,?,?,?)',(source,json.dumps(scores),json.dumps(moves) if moves is not None else None,time.time()))
+        self.db.commit()
+        self.recent_games.append({'source':source,'scores':scores})
+    def history(self,limit=100):
+        with self.lock:
+            rows=self.db.execute('SELECT source,scores,created FROM games ORDER BY id DESC LIMIT ?',(min(max(int(limit),1),500),)).fetchall()
+            return [{'source':src,'scores':json.loads(scores),'time':created} for src,scores,created in rows]
     def learn(self):
         with self.lock:
             if len(self.replay)<256:return
@@ -102,7 +133,11 @@ class Coordinator:
             with torch.no_grad():
                 nextq=self.target(torch.from_numpy(np.stack(ns)))
                 nextq[~torch.from_numpy(np.stack(mm))]=-1e9
-                target=torch.tensor(rr,dtype=torch.float32)+.99*(1-torch.tensor(dd,dtype=torch.float32))*nextq.max(1).values
+                # Double DQN: select with online model, evaluate with target model.
+                online_next=self.model(torch.from_numpy(np.stack(ns)))
+                online_next[~torch.from_numpy(np.stack(mm))]=-1e9
+                best_actions=online_next.argmax(1,keepdim=True)
+                target=torch.tensor(rr,dtype=torch.float32)+.99*(1-torch.tensor(dd,dtype=torch.float32))*nextq.gather(1,best_actions).squeeze(1)
             loss=nn.functional.smooth_l1_loss(q,target)
             self.optimizer.zero_grad();loss.backward();nn.utils.clip_grad_norm_(self.model.parameters(),5);self.optimizer.step()
             self.updates+=1;self.last_loss=round(float(loss.item()),5)
@@ -110,9 +145,14 @@ class Coordinator:
     def checkpoint(self):
         # Hold the training lock while evaluating/saving so model weights remain stable.
         with self.lock:
-            save(self.model,ROOT/'latest.pt',updates=self.updates,games=self.games)
+            temp=ROOT/'latest.tmp.pt'
+            save(self.model,temp,updates=self.updates,games=self.games)
+            temp.replace(ROOT/'latest.pt')
+            state_tmp=ROOT/'trainer.tmp.pt'
+            torch.save({'optimizer':self.optimizer.state_dict(),'updates':self.updates,'games':self.games,'version':self.version},state_tmp)
+            state_tmp.replace(ROOT/'trainer.pt')
             self.version+=1
-            result=evaluate(self.model,48,seed=123450)
+            result=evaluate(self.model,192,seed=123450)
             self.last_eval=result
             # Promotion requires an improvement on fixed evaluation seeds.
             if result['win_share']>self.best+0.001:
@@ -156,7 +196,7 @@ class Coordinator:
                     layers.append({'w':layer.weight.detach().tolist(),'b':layer.bias.detach().tolist()})
             return {'version':self.version,'layers':layers,'observation_size':self.obs_size}
     def stats(self):
-        return {'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
+        return {'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run(self):
         last=time.monotonic();cycles=0
         while not self.stop.is_set():
@@ -225,6 +265,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status);self.send_header('Content-Type',content_type);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
     def do_GET(self):
         if self.path=='/health':return self.reply({'healthy':True})
+        if self.path=='/api/history':return self.reply(self.coord.history())
         if self.path=='/api/stats':
             with self.coord.lock:return self.reply(self.coord.stats())
         if self.path=='/api/policy':return self.reply(self.coord.policy_export())
@@ -268,5 +309,10 @@ def main():
     c=Coordinator();Handler.coord=c
     threading.Thread(target=c.run,daemon=True,name='central-trainer').start()
     print(f'Qwixx distributed trainer on {args.host}:{args.port}',flush=True)
-    ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
+    server=ThreadingHTTPServer((args.host,args.port),Handler)
+    try:server.serve_forever(poll_interval=.5)
+    except KeyboardInterrupt:pass
+    finally:
+        c.stop.set();server.server_close()
+        c.checkpoint();c.db.close()
 if __name__=='__main__':main()

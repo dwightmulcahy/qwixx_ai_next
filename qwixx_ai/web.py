@@ -12,7 +12,7 @@ h1{margin-bottom:4px}.hint{color:#9ca3af}.row{display:flex;align-items:center;ga
 .mark{background:#0f766e}.red{color:#f87171}.yellow{color:#facc15}.green{color:#4ade80}.blue{color:#60a5fa}
 button{cursor:pointer;background:#374151;color:white;border:1px solid #6b7280;border-radius:7px;padding:9px 14px;margin:4px}
 details{background:#1f2937;border-radius:8px;padding:14px;margin:24px 0}summary{cursor:pointer}a{color:#93c5fd}button:hover{background:#4b5563}.legal{background:#2563eb} .dice{font-size:24px;letter-spacing:6px}
-</style></head><body><h1>Qwixx AI</h1><p class="hint">You play seat 1 against three AI opponents. Click a legal move or Pass.</p>
+</style></head><body><h1>Qwixx AI</h1><p><a href="#training-dashboard">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a legal move or Pass.</p>
 <button onclick="reset()">New game</button><div id="status"></div><div id="boards"></div><h3>Your choices</h3><div id="actions"></div>
 <script>
 let state;

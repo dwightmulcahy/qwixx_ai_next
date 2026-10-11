@@ -10,6 +10,7 @@ services:
       TZ: America/Costa_Rica
       QWIXX_DATA: /app/runs
       QWIXX_TORCH_THREADS: "2"
+      QWIXX_MAX_BROWSER_WORKERS: "2"
       PYTHONUNBUFFERED: "1"
     volumes:
       - ./runs:/app/runs
@@ -24,6 +25,8 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     pids_limit: 256
+    mem_limit: 2g
+    stop_grace_period: 60s
     logging:
       driver: json-file
       options:
