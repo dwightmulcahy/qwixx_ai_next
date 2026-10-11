@@ -102,6 +102,22 @@ def test_replay_restores_from_saved_deterministic_games(tmp_path,monkeypatch):
     restored.db.close()
 
 
+def test_checkpoint_restart_restores_optimizer_and_counters(tmp_path,monkeypatch):
+    from qwixx_ai import distributed
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    c.updates=17;c.games=23;c.version=5
+    c.checkpoint()
+    c.db.close()
+    restored=distributed.Coordinator()
+    assert restored.updates==17
+    assert restored.games==23
+    assert restored.version==5
+    assert (tmp_path/'latest.pt').exists()
+    assert (tmp_path/'trainer.pt').exists()
+    restored.db.close()
+
+
 def test_difficulty_selection_and_explanations():
     from qwixx_ai.web import Session,HTML
     assert 'id="difficulty"' in HTML
@@ -147,8 +163,8 @@ process.stdin.on('end',async()=>{
  process.stdout.write(JSON.stringify(submitted));
 });
 '''
-    output=subprocess.run(['node','-e',js],input=__import__('json').dumps({'source':distributed.WORKER_JS,'job':job}),text=True,capture_output=True,check=True,timeout=30)
-    moves=__import__('json').loads(output.stdout)
+    output=subprocess.run(['node','-e',js],input=json.dumps({'source':distributed.WORKER_JS,'job':job}),text=True,capture_output=True,check=True,timeout=30)
+    moves=json.loads(output.stdout)
     assert moves['ticket']==job['ticket']
     assert c.accept(moves)['accepted']
     c.db.close()
