@@ -73,7 +73,6 @@ class Game:
         if self.phase<self.n:
             self.phase+=1
             if self.phase==self.n:self.white_locks.clear()
+            return
         if self.done:return
-        if self.phase<self.n:pass
-        else:
-            self.turn+=1;self.active=(self.active+1)%self.n;self._roll()
+        self.turn+=1;self.active=(self.active+1)%self.n;self._roll()
