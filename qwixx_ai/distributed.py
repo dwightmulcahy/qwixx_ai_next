@@ -16,6 +16,7 @@ from .web import HTML as GAME_HTML, Session
 ROOT=Path(os.getenv('QWIXX_DATA','/app/runs'))
 ROOT.mkdir(parents=True,exist_ok=True)
 WORKER_TOKEN=os.getenv('QWIXX_WORKER_TOKEN','')
+ADMIN_TOKEN=os.getenv('QWIXX_ADMIN_TOKEN','')
 MAX_BODY=350_000
 MAX_PENDING=500
 
@@ -59,7 +60,7 @@ class Coordinator:
                 self.games=state.get('games',0)
                 self.version=state.get('version',0)
             except Exception as exc:print('Trainer state recovery failed:',exc,flush=True)
-        self.stop=threading.Event()
+        self.stop=threading.Event();self.paused=threading.Event()
         self.log=ROOT/'metrics.jsonl'
     def ticket(self):
         with self.lock:
@@ -207,14 +208,14 @@ class Coordinator:
                 self.league.append(copy.deepcopy(self.best_model))
                 self.promoted_at=time.time()
             with self.log.open('a') as f:f.write(json.dumps({'time':time.time(),**self.stats()})+'\n')
-    def new_session(self):
+    def new_session(self,difficulty='champion'):
         with self.lock:
             for key,(_,updated) in list(self.sessions.items()):
                 if time.time()-updated>86400:self.sessions.pop(key,None)
             if len(self.sessions)>=200:raise ValueError('Too many game sessions')
             sid=uuid.uuid4().hex
             model=self.best_model
-            session=Session(model=model)
+            session=Session(model=model,difficulty=difficulty)
             session.advance()
             self.sessions[sid]=(session,time.time())
             return {'session_id':sid,**session.view()}
@@ -239,10 +240,11 @@ class Coordinator:
                     layers.append({'w':layer.weight.detach().tolist(),'b':layer.bias.detach().tolist()})
             return {'version':self.version,'layers':layers,'observation_size':self.obs_size}
     def stats(self):
-        return {'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
+        return {'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run(self):
         last=time.monotonic();cycles=0
         while not self.stop.is_set():
+            if self.paused.wait(.05):continue
             try:
                 self.central_rollout()
                 for _ in range(3):self.learn()
@@ -337,12 +339,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(html,content_type='text/html; charset=utf-8')
         return self.reply({'error':'Not found'},404)
     def do_POST(self):
+        if self.path=='/api/admin':
+            if not ADMIN_TOKEN or not secrets.compare_digest(self.headers.get('X-Admin-Token',''),ADMIN_TOKEN):return self.reply({'error':'Unauthorized'},403)
+            try:
+                n=int(self.headers.get('Content-Length','0'))
+                if n<1 or n>1000:raise ValueError('Invalid body size')
+                command=json.loads(self.rfile.read(n)).get('command')
+                if command=='pause':self.coord.paused.set()
+                elif command=='resume':self.coord.paused.clear()
+                elif command=='checkpoint':self.coord.checkpoint()
+                elif command=='rollback':
+                    with self.coord.lock:
+                        if self.coord.best_model is None:raise ValueError('No champion checkpoint')
+                        self.coord.model.load_state_dict(self.coord.best_model.state_dict())
+                        self.coord.target.load_state_dict(self.coord.best_model.state_dict())
+                        self.coord.optimizer=torch.optim.Adam(self.coord.model.parameters(),lr=3e-4)
+                        self.coord.checkpoint()
+                else:raise ValueError('Unknown command')
+                return self.reply({'ok':True,'paused':self.coord.paused.is_set()})
+            except (ValueError,TypeError) as exc:return self.reply({'error':str(exc)},400)
         if self.path in ('/reset','/move'):
             try:
                 n=int(self.headers.get('Content-Length','0'))
                 if n<0 or n>10000:raise ValueError('Payload too large')
                 data=json.loads(self.rfile.read(n) or b'{}')
-                if self.path=='/reset':result=self.coord.new_session()
+                if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'))
                 else:
                     sid=data.get('session_id','')
                     if not isinstance(sid,str):raise ValueError('Invalid session')

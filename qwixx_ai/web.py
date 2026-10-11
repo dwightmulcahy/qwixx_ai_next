@@ -1,8 +1,8 @@
 """Local play-versus-AI web UI, standard-library HTTP server."""
 import argparse,json,threading
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-from .core import Game,COLORS
-from .agents import heuristic
+from .core import Game,COLORS,ORDER
+from .agents import heuristic,random_agent
 from .model import choose,load
 
 HTML='''<!doctype html><html><head><meta charset="utf-8"><title>Qwixx AI</title><style>
@@ -13,27 +13,43 @@ h1{margin-bottom:4px}.hint{color:#9ca3af}.row{display:flex;align-items:center;ga
 button{cursor:pointer;background:#374151;color:white;border:1px solid #6b7280;border-radius:7px;padding:9px 14px;margin:4px}
 details{background:#1f2937;border-radius:8px;padding:14px;margin:24px 0}summary{cursor:pointer}a{color:#93c5fd}button:hover{background:#4b5563}.legal{background:#2563eb} .dice{font-size:24px;letter-spacing:6px}
 </style></head><body><h1>Qwixx AI</h1><p><a href="#training-dashboard">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a legal move or Pass.</p>
-<button onclick="reset()">New game</button><div id="status"></div><div id="boards"></div><h3>Your choices</h3><div id="actions"></div>
+<label for="difficulty">AI difficulty</label><select id="difficulty"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="champion" selected>Champion</option></select><button onclick="reset()">New game</button><div id="status"></div><div id="boards"></div><h3>Your choices</h3><div id="actions"></div>
 <script>
 let state;
 async function api(path,body){let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});let j=await r.json();if(!r.ok)alert(j.error||'Error');return j}
-async function reset(){state=await api('/reset');render()}
+async function reset(){state=await api('/reset',{difficulty:document.getElementById('difficulty').value});render()}
 async function act(a){state=await api('/move',{action:a,session_id:state.session_id});render()}
 function render(){if(!state)return;
  document.getElementById('status').innerHTML=`<p class="dice">🎲 ${state.dice.join(' · ')}</p><p>Turn ${state.turn+1} · ${state.done?'Game over':state.actor===0?'Your move':'AI thinking'} · Phase ${state.phase} · Locked: ${state.locks.join(', ')||'none'} · Colored dice in play: ${['red','yellow','green','blue'].filter(c=>!state.locks.includes(c)).join(', ')}</p><p>Scores: ${state.scores.join(' / ')}</p>`;
  let b='';state.boards.forEach((board,i)=>{b+=`<h3>${i===0?'You':'AI '+i} — ${state.scores[i]} points · ${board.penalties} penalties</h3>`;
  board.rows.forEach((row,c)=>{let nums=c<2?[2,3,4,5,6,7,8,9,10,11,12]:[12,11,10,9,8,7,6,5,4,3,2];b+=`<div class="row ${['red','yellow','green','blue'][c]}"><b>${['Red','Yellow','Green','Blue'][c]}</b>`+nums.map(n=>`<span class="cell ${row.includes(n)?'mark':''}">${row.includes(n)?'✓':n}</span>`).join('')+'</div>'})});document.getElementById('boards').innerHTML=b;
- document.getElementById('actions').innerHTML=state.done?'<b>Final scores above. Start a new game.</b>':`<button onclick="act(null)">Pass</button>`+state.legal.map(a=>`<button class="legal" onclick='act(${JSON.stringify(a)})'>${['Red','Yellow','Green','Blue'][a[0]]} ${a[1]} ${a[2]?'🔒':''}</button>`).join('');}
+ document.getElementById('actions').innerHTML=(state.explanations?'<h4>Move analysis</h4><p>'+state.explanations.map(x=>x.move+': +'+x.immediate+' points, skips '+x.skipped+' numbers'+(x.lock?', locks row':'')).join(' · ')+'</p>':'')+(state.done?'<b>Final scores above. Start a new game.</b>':`<button onclick="act(null)">Pass</button>`+state.legal.map(a=>`<button class="legal" onclick='act(${JSON.stringify(a)})'>${['Red','Yellow','Green','Blue'][a[0]]} ${a[1]} ${a[2]?'🔒':''}</button>`).join(''));}
 reset();</script></body></html>'''
 
 class Session:
-    def __init__(self,model=None):self.model=model;self.lock=threading.Lock();self.game=Game()
-    def ai(self,g):return choose(self.model,g) if self.model else heuristic(g)
+    def __init__(self,model=None,difficulty='champion'):
+        if difficulty not in ('beginner','intermediate','advanced','champion'):raise ValueError('Invalid difficulty')
+        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game()
+    def ai(self,g):
+        if self.difficulty=='beginner':return random_agent(g)
+        if self.difficulty=='intermediate':return heuristic(g)
+        if self.model is None:return heuristic(g)
+        return choose(self.model,g,epsilon=0.18 if self.difficulty=='advanced' else 0)
     def advance(self):
         while not self.game.done and self.game.actor!=0:self.game.step(self.ai(self.game))
+    def explanations(self):
+        g=self.game;b=g.boards[g.actor]
+        out=[]
+        for c,n,locking in g.legal():
+            row=b.rows[c];index=ORDER[c].index(n)
+            skipped=index-(ORDER[c].index(row[-1]) if row else -1)-1
+            k=len(row)
+            immediate=(k+1)*(k+2)//2-k*(k+1)//2+(k+2 if locking else 0)
+            out.append({'move':f'{COLORS[c]} {n}','immediate':immediate,'skipped':skipped,'lock':locking})
+        return out
     def view(self):
         g=self.game
-        return {'turn':g.turn,'phase':g.phase,'actor':g.actor,'dice':g.dice,'locks':[COLORS[c] for c in sorted(g.locks)],'done':g.done,'scores':g.scores(),'boards':[{'rows':b.rows,'penalties':b.penalties} for b in g.boards],'legal':g.legal() if not g.done else []}
+        return {'turn':g.turn,'phase':g.phase,'actor':g.actor,'dice':g.dice,'locks':[COLORS[c] for c in sorted(g.locks)],'done':g.done,'scores':g.scores(),'boards':[{'rows':b.rows,'penalties':b.penalties} for b in g.boards],'legal':g.legal() if not g.done else [],'difficulty':self.difficulty,'explanations':self.explanations() if not g.done else []}
 
 def serve(host='127.0.0.1',port=8765,model_path=None):
     session=Session(load(model_path) if model_path else None)

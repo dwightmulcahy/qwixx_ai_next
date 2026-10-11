@@ -76,3 +76,26 @@ def test_replay_restores_from_saved_deterministic_games(tmp_path,monkeypatch):
     assert len(restored.replay)>0
     assert len(restored.priorities)==len(restored.replay)
     restored.db.close()
+
+
+def test_difficulty_selection_and_explanations():
+    from qwixx_ai.web import Session,HTML
+    assert 'id="difficulty"' in HTML
+    for level in ('beginner','intermediate','advanced','champion'):
+        session=Session(difficulty=level)
+        view=session.view()
+        assert view['difficulty']==level
+        assert all(x['skipped']>=0 and x['immediate']>0 for x in view['explanations'])
+    with pytest.raises(ValueError):Session(difficulty='impossible')
+
+
+def test_training_pause_and_resume(tmp_path,monkeypatch):
+    from qwixx_ai import distributed
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    assert not c.stats()['paused']
+    c.paused.set()
+    assert c.stats()['paused']
+    c.paused.clear()
+    assert not c.stats()['paused']
+    c.db.close()
