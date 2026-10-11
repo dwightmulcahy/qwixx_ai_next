@@ -212,6 +212,7 @@ class Coordinator:
 
 WORKER_JS=r'''
 let enabled=false,completed=0,busy=false,policy=null;
+const inWorker=typeof document==='undefined';
 const order=[Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>12-i),Array.from({length:11},(_,i)=>12-i)];
 async function refreshPolicy(){const r=await fetch('/api/policy');if(!r.ok)throw Error('Policy unavailable');policy=await r.json();}
 function inference(input){let v=input;for(let li=0;li<policy.layers.length;li++){const l=policy.layers[li],out=l.b.map((bias,i)=>{let z=bias,w=l.w[i];for(let j=0;j<v.length;j++)z+=w[j]*v[j];return li===policy.layers.length-1?z:Math.max(0,z)});v=out;}return v;}
@@ -246,10 +247,11 @@ async function runGame(){
  const r=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:job.ticket,moves:actions})});
  if(!r.ok)throw Error((await r.json()).error||'Upload failed');completed++;
 }
-async function loop(){if(!enabled||busy)return;busy=true;try{await runGame();document.getElementById('workerStatus').textContent=`Contributed ${completed} verified games · policy ${policy.version}`;}catch(e){document.getElementById('workerStatus').textContent='Worker error: '+e.message;}finally{busy=false;if(enabled)setTimeout(loop,1000)}}
-function toggleWorker(){enabled=!enabled;document.getElementById('workerToggle').textContent=enabled?'Stop browser training':'Start browser training';if(enabled)loop()}
+async function loop(){if(!enabled||busy)return;busy=true;try{await runGame();if(inWorker)postMessage({type:'progress',completed,version:policy.version});else document.getElementById('workerStatus').textContent=`Contributed ${completed} verified games · policy ${policy.version}`;}catch(e){if(inWorker)postMessage({type:'error',message:e.message});else document.getElementById('workerStatus').textContent='Worker error: '+e.message;}finally{busy=false;if(enabled)setTimeout(loop,1000)}}
+function toggleWorker(){enabled=!enabled;if(!inWorker)document.getElementById('workerToggle').textContent=enabled?'Stop browser training':'Start browser training';if(enabled)loop()}
+if(inWorker)onmessage=e=>{if(e.data==='start'&&!enabled)toggleWorker();if(e.data==='stop'&&enabled)toggleWorker()};
 async function stats(){try{const x=await(await fetch('/api/stats')).json();document.getElementById('trainingStats').textContent=`Central games: ${x.central_games} | Browser games: ${x.browser_games} | Updates: ${x.updates} | Replay: ${x.replay_size} | Best win share: ${(100*x.best_win_share).toFixed(1)}% | Sessions: ${x.sessions}`;if(policy&&x.model_version!==policy.version)await refreshPolicy();}catch(e){}}
-setInterval(stats,5000);stats();
+if(!inWorker){setInterval(stats,5000);stats();}
 '''
 
 # Server supplies exact dice sequence; do not trust browser RNG or replay claims.
@@ -276,7 +278,18 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:return self.reply({'error':str(e)},429)
         if self.path=='/worker.js':return self.reply(WORKER_JS,content_type='application/javascript')
         if self.path=='/':
-            html=GAME_HTML.replace('</body>','<section><h2>Community training</h2><p>Training runs on the server continuously. You can also contribute simulations from this browser while the tab is open.</p><button id="workerToggle" onclick="toggleWorker()">Start browser training</button><p id="workerStatus">Browser training is off</p><p id="trainingStats"></p></section><script src="/worker.js"></script></body>')
+            html=GAME_HTML.replace('</body>','<section><h2>Community training</h2><p>Training runs on the server continuously. You can also contribute simulations from this browser while the tab is open.</p><button id="workerToggle" onclick="toggleWorker()">Start browser training</button><p id="workerStatus">Browser training is off</p><p id="trainingStats"></p><section id="training-dashboard"><h2>Training dashboard</h2><p id="trainingUptime"></p><div id="trainingChart" aria-label="Recent game score chart"></div><h3>Recent games</h3><div id="trainingHistory"></div></section></section><script>
+let workers=[],completed=0;
+function toggleWorker(){
+ const button=document.getElementById('workerToggle');
+ if(workers.length){workers.forEach(w=>w.terminate());workers=[];button.textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser training stopped';return}
+ const count=Math.max(1,Math.min(2,navigator.hardwareConcurrency||1));
+ for(let i=0;i<count;i++){const w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress'){completed++;document.getElementById('workerStatus').textContent='Contributed '+completed+' verified games'}else if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');workers.push(w)}
+ button.textContent='Stop browser training';
+}
+async function stats(){try{const x=await(await fetch('/api/stats')).json();document.getElementById('trainingStats').textContent='Central games: '+x.central_games+' | Browser games: '+x.browser_games+' | Updates: '+x.updates+' | Replay: '+x.replay_size+' | Best win share: '+(100*x.best_win_share).toFixed(1)+'%';document.getElementById('trainingUptime').textContent='Uptime: '+Math.round(x.uptime_seconds/60)+' min | Saved games: '+x.database_games;const games=await(await fetch('/api/history')).json();document.getElementById('trainingHistory').textContent=games.slice(0,10).map(g=>g.source+' '+g.scores.join(' / ')).join(' · ');const scores=games.slice(0,40).reverse().map(g=>Math.max(...g.scores));document.getElementById('trainingChart').innerHTML='<svg role="img" aria-label="Recent winning scores" viewBox="0 0 400 90" style="width:100%;height:110px"><polyline fill="none" stroke="#60a5fa" stroke-width="2" points="'+scores.map((v,i)=>(i*400/Math.max(1,scores.length-1))+','+(85-Math.max(0,Math.min(80,v/2)))).join(' ')+'"/></svg>';}catch(e){}}
+setInterval(stats,5000);stats();
+</script></body>')
             return self.reply(html,content_type='text/html; charset=utf-8')
         return self.reply({'error':'Not found'},404)
     def do_POST(self):
