@@ -45,7 +45,9 @@ def test_lock_ends_after_two():
     g.step((0,12,True));assert 0 in g.locks
     g.boards[1].rows[1]=[2,3,4,5,6]
     assert (1,12,True) in g.legal()
-    g.step((1,12,True));assert g.done
+    g.step((1,12,True))
+    for _ in range(g.n-2):g.step(None)
+    assert g.done
 
 def test_env_finishes():
     e=QwixxEnv();o,i=e.reset(seed=17)
@@ -173,6 +175,7 @@ def test_second_lock_ends_immediately():
     g=Game(seed=13);g.dice=(6,6,6,6,6,6)
     g.locks.add(0);g.boards[0].rows[1]=[2,3,4,5,6]
     g.step((1,12,True))
+    for _ in range(g.n-1):g.step(None)
     assert g.done and g.locks=={0,1}
     with pytest.raises(RuntimeError):g.step(None)
 
@@ -216,3 +219,26 @@ def test_double_dqn_model_shapes():
     from qwixx_ai.env import observe
     model=network(len(observe(Game())))
     assert model(torch.from_numpy(observe(Game()))).shape==(89,)
+
+
+def test_simultaneous_white_phase_allows_multiple_locks():
+    g=Game(seed=42);g.dice=(6,6,1,1,1,1)
+    for b in g.boards[:2]:b.rows[0]=[2,3,4,5,6]
+    g.step((0,12,True))
+    assert not g.done
+    assert (0,12,True) in g.legal()
+    g.step((0,12,True))
+    assert g.boards[0].rows[0][-1]==12
+    assert g.boards[1].rows[0][-1]==12
+    for _ in range(g.n-2):g.step(None)
+    assert 0 in g.locks
+    assert 0 not in g.available_colors
+
+
+def test_second_lock_waits_for_shared_white_phase():
+    g=Game(seed=44);g.locks={0};g.dice=(6,6,1,1,1,1)
+    g.boards[0].rows[1]=[2,3,4,5,6]
+    g.step((1,12,True))
+    assert not g.done
+    for _ in range(g.n-1):g.step(None)
+    assert g.done
