@@ -1,5 +1,29 @@
+import os
+import subprocess
+import sys
+
 import pytest
 from qwixx_ai.distributed import Coordinator
+
+def test_default_training_data_path_is_writable(tmp_path):
+    env=os.environ.copy();env.pop('QWIXX_DATA',None)
+    result=subprocess.run(
+        [sys.executable,'-c','from qwixx_ai import distributed; print(distributed.ROOT)'],
+        cwd=tmp_path,env=env,text=True,capture_output=True,check=True,
+    )
+    assert result.stdout.strip()==str(tmp_path/'runs')
+    assert (tmp_path/'runs').is_dir()
+
+
+def test_explicit_training_data_path_is_honored(tmp_path):
+    target=tmp_path/'custom-runs';env=os.environ.copy();env['QWIXX_DATA']=str(target)
+    result=subprocess.run(
+        [sys.executable,'-c','from qwixx_ai import distributed; print(distributed.ROOT)'],
+        env=env,text=True,capture_output=True,check=True,
+    )
+    assert result.stdout.strip()==str(target)
+    assert target.is_dir()
+
 
 def test_independent_sessions(tmp_path,monkeypatch):
     c=Coordinator()
@@ -102,7 +126,7 @@ def test_training_pause_and_resume(tmp_path,monkeypatch):
 
 
 def test_browser_python_deterministic_pass_parity(tmp_path,monkeypatch):
-    import json,shutil,subprocess
+    import json,shutil
     from qwixx_ai import distributed
     if shutil.which('node') is None:pytest.skip('Node.js unavailable')
     monkeypatch.setattr(distributed,'ROOT',tmp_path)
@@ -123,8 +147,8 @@ process.stdin.on('end',async()=>{
  process.stdout.write(JSON.stringify(submitted));
 });
 '''
-    output=subprocess.run(['node','-e',js],input=json.dumps({'source':distributed.WORKER_JS,'job':job}),text=True,capture_output=True,check=True,timeout=30)
-    moves=json.loads(output.stdout)
+    output=subprocess.run(['node','-e',js],input=__import__('json').dumps({'source':distributed.WORKER_JS,'job':job}),text=True,capture_output=True,check=True,timeout=30)
+    moves=__import__('json').loads(output.stdout)
     assert moves['ticket']==job['ticket']
     assert c.accept(moves)['accepted']
     c.db.close()
