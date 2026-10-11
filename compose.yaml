@@ -13,6 +13,13 @@ services:
       QWIXX_CENTRAL_WORKERS: "2"
       QWIXX_MAX_BROWSER_WORKERS: "2"
       PYTHONUNBUFFERED: "1"
+      QWIXX_SMTP_HOST: ${QWIXX_SMTP_HOST:-}
+      QWIXX_SMTP_PORT: ${QWIXX_SMTP_PORT:-587}
+      QWIXX_SMTP_USER: ${QWIXX_SMTP_USER:-}
+      QWIXX_SMTP_PASSWORD: ${QWIXX_SMTP_PASSWORD:-}
+      QWIXX_SMTP_FROM: ${QWIXX_SMTP_FROM:-}
+      QWIXX_SMTP_SSL: ${QWIXX_SMTP_SSL:-false}
+      QWIXX_COOKIE_SECURE: ${QWIXX_COOKIE_SECURE:-false}
     volumes:
       - ./runs:/app/runs
     command: ["python", "-m", "qwixx_ai.distributed", "--host", "0.0.0.0", "--port", "8765"]
