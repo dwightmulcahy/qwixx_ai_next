@@ -72,7 +72,10 @@ def serve(host='127.0.0.1',port=8765,model_path=None):
                 if length>10000:raise ValueError('Payload too large')
                 data=json.loads(self.rfile.read(length) or b'{}')
                 with session.lock:
-                    if self.path=='/reset':session.game=Game();session.advance()
+                    if self.path=='/reset':
+                        difficulty=data.get('difficulty','champion')
+                        if difficulty not in ('beginner','intermediate','advanced','champion'):raise ValueError('Invalid difficulty')
+                        session.difficulty=difficulty;session.game=Game();session.advance()
                     else:
                         a=data.get('action');a=None if a is None else tuple(a)
                         session.game.step(a);session.advance()
