@@ -1,6 +1,6 @@
 import pytest
 from qwixx_ai.core import Game,Board
-from qwixx_ai.env import encode,decode,observe,mask,QwixxEnv
+from qwixx_ai.env import encode,decode,observe,QwixxEnv
 from qwixx_ai.agents import heuristic
 from qwixx_ai.tournament import play
 
