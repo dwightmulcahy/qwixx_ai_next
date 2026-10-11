@@ -139,3 +139,29 @@ def test_central_rollout_generates_valid_persisted_game(tmp_path,monkeypatch):
     assert c.stats()['database_games']==1
     assert len(c.replay)==len(c.priorities)>0
     c.db.close()
+
+
+def test_admin_endpoint_requires_token(tmp_path,monkeypatch):
+    import json,threading,urllib.request,urllib.error
+    from http.server import ThreadingHTTPServer
+    from qwixx_ai import distributed
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    monkeypatch.setattr(distributed,'ADMIN_TOKEN','test-secret')
+    coord=distributed.Coordinator()
+    class TestHandler(distributed.Handler):
+        def log_message(self,*args):pass
+    TestHandler.coord=coord
+    server=ThreadingHTTPServer(('127.0.0.1',0),TestHandler)
+    thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    url=f'http://127.0.0.1:{server.server_port}/api/admin'
+    def request(token=None,command='pause'):
+        headers={'Content-Type':'application/json'}
+        if token:headers['X-Admin-Token']=token
+        return urllib.request.urlopen(urllib.request.Request(url,data=json.dumps({'command':command}).encode(),headers=headers),timeout=5)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as err:request()
+        assert err.value.code==403
+        with request('test-secret') as response:assert json.load(response)['paused']
+        with request('test-secret','resume') as response:assert not json.load(response)['paused']
+    finally:
+        server.shutdown();server.server_close();thread.join(timeout=5);coord.db.close()
