@@ -32,3 +32,15 @@ def test_training_database_history(tmp_path, monkeypatch):
     assert c.history(10)[0]['scores']==[1,2,3,4]
     assert c.stats()['database_games']==1
     c.db.close()
+
+
+def test_worker_rate_limit_logic():
+    from qwixx_ai.distributed import Handler
+    class Fake:
+        client_address=('192.0.2.42',1234)
+        rate_lock=Handler.rate_lock
+        rate_buckets={}
+        limited=Handler.limited
+    f=Fake()
+    assert all(not f.limited() for _ in range(120))
+    assert f.limited()

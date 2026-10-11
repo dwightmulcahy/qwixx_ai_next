@@ -127,7 +127,10 @@ class Coordinator:
     def learn(self):
         with self.lock:
             if len(self.replay)<256:return
-            batch=self.rng.sample(list(self.replay),64)
+            # Reward-aware replay prioritizes rare consequential decisions.
+            population=list(self.replay)
+            weights=[0.1+abs(float(item[2])) for item in population]
+            batch=self.rng.choices(population,weights=weights,k=64)
             ss,aa,rr,ns,dd,mm=zip(*batch)
             q=self.model(torch.from_numpy(np.stack(ss))).gather(1,torch.tensor(aa).long()[:,None]).squeeze(1)
             with torch.no_grad():
@@ -262,6 +265,17 @@ def rolls_for(seed):
 class Handler(BaseHTTPRequestHandler):
     coord=None
     session=None
+    rate_lock=threading.Lock()
+    rate_buckets={}
+    def limited(self):
+        now=time.monotonic();ip=self.client_address[0]
+        with self.rate_lock:
+            count,start=self.rate_buckets.get(ip,(0,now))
+            if now-start>=60:count,start=0,now
+            count+=1;self.rate_buckets[ip]=(count,start)
+            if len(self.rate_buckets)>5000:
+                self.rate_buckets={key:value for key,value in self.rate_buckets.items() if now-value[1]<60}
+            return count>120
     def reply(self,data,status=200,content_type='application/json'):
         body=json.dumps(data).encode() if content_type=='application/json' else data.encode()
         self.send_response(status);self.send_header('Content-Type',content_type);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
@@ -272,6 +286,7 @@ class Handler(BaseHTTPRequestHandler):
             with self.coord.lock:return self.reply(self.coord.stats())
         if self.path=='/api/policy':return self.reply(self.coord.policy_export())
         if self.path=='/api/job':
+            if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
             if WORKER_TOKEN and self.headers.get('X-Worker-Token')!=WORKER_TOKEN:return self.reply({'error':'Unauthorized'},403)
             try:
                 job=self.coord.ticket();job['rolls']=rolls_for(job['seed']);return self.reply(job)
@@ -307,6 +322,7 @@ setInterval(stats,5000);stats();
                 return self.reply(result)
             except (ValueError,RuntimeError,TypeError) as e:return self.reply({'error':str(e)},400)
         if self.path!='/api/submit':return self.reply({'error':'Not found'},404)
+        if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
         if WORKER_TOKEN and self.headers.get('X-Worker-Token')!=WORKER_TOKEN:return self.reply({'error':'Unauthorized'},403)
         try:
             n=int(self.headers.get('Content-Length','0'))
