@@ -34,7 +34,7 @@ function card(board,i){let b='<h3 class="player-heading">'+(i===0?'You':'AI '+i)
 function render(){if(!state)return;
  document.getElementById('status').innerHTML='<div class="dice-tray">'+state.dice.map((n,i)=>die(n,i<2?'white':colors[i-2],i<2?'White '+(i+1):names[i-2],i>=2&&state.locks.includes(colors[i-2]))).join('')+'</div><p class="turn-info">Turn '+(state.turn+1)+' · '+(state.done?'Game over':state.actor===0?'Your move':'AI thinking')+' · '+(state.phase<4?'White dice phase':'Colored dice phase')+' · Locked: '+(state.locks.join(', ')||'none')+'</p><p>Scores: '+state.scores.join(' / ')+'</p>';
  document.getElementById('boards').innerHTML=state.boards.map(card).join('');
- document.getElementById('actions').innerHTML=(state.explanations?'<h4>Move analysis</h4><p>'+state.explanations.map(x=>x.move+': +'+x.immediate+' points, skips '+x.skipped+' numbers'+(x.lock?', locks row':'')).join(' · ')+'</p>':'')+(state.done?'<b>Final scores above. Start a new game.</b>':'<button onclick="act(null)">Pass</button>'+state.legal.map(a=>'<button class="legal" onclick=\'act('+JSON.stringify(a)+')\'>'+names[a[0]]+' '+a[1]+(a[2]?' 🔒':'')+'</button>').join(''));
+ document.getElementById('actions').innerHTML=(state.explanations?'<h4>Move analysis</h4><p>'+state.explanations.map(x=>x.move+': +'+x.immediate+' points, skips '+x.skipped+' numbers'+(x.lock?', locks row':'')).join(' · ')+'</p>':'')+(state.done?'<b>Final scores above. Start a new game.</b>':'<button onclick="act(null)">Pass</button>'+state.legal.map(a=>'<button class="legal" onclick=act('+JSON.stringify(a)+')>'+names[a[0]]+' '+a[1]+(a[2]?' 🔒':'')+'</button>').join(''));
 }
 
 reset();</script><details id="rules-faq"><summary>Qwixx rules & FAQ</summary>
