@@ -13,7 +13,7 @@ from .agents import heuristic,random_agent
 from .tournament import evaluate
 from .web import HTML as GAME_HTML, Session
 
-ROOT=Path(os.getenv('QWIXX_DATA','/app/runs'))
+ROOT=Path(os.getenv('QWIXX_DATA', Path.cwd()/'runs'))
 ROOT.mkdir(parents=True,exist_ok=True)
 WORKER_TOKEN=os.getenv('QWIXX_WORKER_TOKEN','')
 ADMIN_TOKEN=os.getenv('QWIXX_ADMIN_TOKEN','')
@@ -310,40 +310,64 @@ def rolls_for(seed):
     g=Game(seed=seed)
     return [g.dice]+[tuple(g.rng.randint(1,6) for _ in range(6)) for _ in range(999)]
 
+DASHBOARD_HTML=GAME_HTML.replace('</body>', '''
+<hr id="training-dashboard"><h2>Distributed training</h2>
+<p id="trainingStats">Loading training status…</p>
+<button id="workerToggle" onclick="toggleBrowserWorkers()">Start browser training</button>
+<p id="workerStatus" class="hint">Browser worker idle. Up to two worker threads will contribute verified games without blocking the game UI.</p>
+<canvas id="trainingChart" width="860" height="180" style="background:#0b1220;border-radius:8px;max-width:100%"></canvas>
+<h3>Recent training games</h3><div id="trainingHistory" class="hint">Loading…</div>
+<script src="/worker.js"></script><script>
+let browserWorkers=[];
+function toggleBrowserWorkers(){
+ if(browserWorkers.length){for(const w of browserWorkers)w.postMessage('stop');browserWorkers=[];document.getElementById('workerToggle').textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser workers stopped.';return}
+ let count=Math.min(2,navigator.hardwareConcurrency||1);
+ for(let i=0;i<count;i++){let w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress')document.getElementById('workerStatus').textContent=`Browser workers active · latest worker completed ${e.data.completed} · policy ${e.data.version}`;if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');browserWorkers.push(w)}
+ document.getElementById('workerToggle').textContent='Stop browser training';
+}
+let metricPoints=[];
+async function drawDashboard(){
+ try{const x=await(await fetch('/api/stats')).json();metricPoints.push(x);metricPoints=metricPoints.slice(-60);
+ document.getElementById('trainingStats').textContent=`Games ${x.games} · central ${x.central_games} · browser ${x.browser_games} · updates ${x.updates} · replay ${x.replay_size} · loss ${x.loss??'—'} · best ${(100*x.best_win_share).toFixed(1)}% · sessions ${x.sessions} · DB ${x.database_games}`;
+ const c=document.getElementById('trainingChart'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#60a5fa';ctx.beginPath();metricPoints.forEach((p,i)=>{let xx=i*Math.max(1,c.width/59),yy=c.height-20-Math.min(140,(p.updates/(metricPoints[metricPoints.length-1].updates||1))*140);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.stroke();
+ const h=await(await fetch('/api/history?limit=12')).json();document.getElementById('trainingHistory').textContent=h.games.map(g=>`${g.source}: ${g.scores.join('/')}`).join(' · ')||'No persisted games yet.';
+ }catch(e){document.getElementById('trainingStats').textContent='Training status unavailable: '+e.message}}
+setInterval(drawDashboard,5000);drawDashboard();
+</script></body>''')
+
 class Handler(BaseHTTPRequestHandler):
-    coord=None
-    session=None
-    rate_lock=threading.Lock()
-    rate_buckets={}
+    coord=None;session=None
+    rate_lock=threading.Lock();rate_buckets={}
     def limited(self):
         now=time.monotonic();ip=self.client_address[0]
         with self.rate_lock:
-            count,start=self.rate_buckets.get(ip,(0,now))
-            if now-start>=60:count,start=0,now
-            count+=1;self.rate_buckets[ip]=(count,start)
-            if len(self.rate_buckets)>5000:
-                self.rate_buckets={key:value for key,value in self.rate_buckets.items() if now-value[1]<60}
-            return count>120
-    def reply(self,data,status=200,content_type='application/json'):
-        body=json.dumps(data).encode() if content_type=='application/json' else data.encode()
-        self.send_response(status);self.send_header('Content-Type',content_type);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+            bucket=[t for t in self.rate_buckets.get(ip,[]) if now-t<60]
+            limited=len(bucket)>=120
+            if not limited:bucket.append(now)
+            self.rate_buckets[ip]=bucket
+        return limited
+    def reply(self,obj,status=200,ctype='application/json'):
+        b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
+    def authorized_worker(self):
+        return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token',''),WORKER_TOKEN)
     def do_GET(self):
-        if self.path=='/health':return self.reply({'healthy':True})
-        if self.path=='/api/history':return self.reply(self.coord.history())
-        if self.path=='/api/stats':
-            with self.coord.lock:return self.reply(self.coord.stats())
-        if self.path=='/api/policy':return self.reply(self.coord.policy_export())
-        if self.path=='/api/job':
-            if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
-            if WORKER_TOKEN and self.headers.get('X-Worker-Token')!=WORKER_TOKEN:return self.reply({'error':'Unauthorized'},403)
-            try:
+        try:
+            if self.path=='/':return self.reply(DASHBOARD_HTML,ctype='text/html; charset=utf-8')
+            if self.path=='/worker.js':return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
+            if self.path=='/health':return self.reply({'healthy':True})
+            if self.path=='/api/stats':return self.reply(self.coord.stats())
+            if self.path.startswith('/api/history'):
+                try:limit=int(self.path.split('limit=',1)[1].split('&',1)[0]) if 'limit=' in self.path else 100
+                except ValueError:limit=100
+                return self.reply({'games':self.coord.history(limit)})
+            if self.path=='/api/policy':return self.reply(self.coord.policy_export())
+            if self.path=='/api/job':
+                if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
+                if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
                 job=self.coord.ticket();job['rolls']=rolls_for(job['seed']);return self.reply(job)
-            except ValueError as e:return self.reply({'error':str(e)},429)
-        if self.path=='/worker.js':return self.reply(WORKER_JS,content_type='application/javascript')
-        if self.path=='/':
-            html=GAME_HTML.replace('</body>',"<section><h2>Community training</h2><p>Training runs on the server continuously. You can also contribute simulations from this browser while the tab is open.</p><button id=\"workerToggle\" onclick=\"toggleWorker()\">Start browser training</button><p id=\"workerStatus\">Browser training is off</p><p id=\"trainingStats\"></p><section id=\"training-dashboard\"><h2>Training dashboard</h2><p id=\"trainingUptime\"></p><div id=\"trainingChart\" aria-label=\"Recent game score chart\"></div><h3>Recent games</h3><div id=\"trainingHistory\"></div></section></section><script>\nlet workers=[],completed=0;\nfunction toggleWorker(){\n const button=document.getElementById('workerToggle');\n if(workers.length){workers.forEach(w=>w.terminate());workers=[];button.textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser training stopped';return}\n const count=Math.max(1,Math.min(2,navigator.hardwareConcurrency||1));\n for(let i=0;i<count;i++){const w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress'){completed++;document.getElementById('workerStatus').textContent='Contributed '+completed+' verified games'}else if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');workers.push(w)}\n button.textContent='Stop browser training';\n}\nasync function stats(){try{const x=await(await fetch('/api/stats')).json();document.getElementById('trainingStats').textContent='Central games: '+x.central_games+' | Browser games: '+x.browser_games+' | Updates: '+x.updates+' | Replay: '+x.replay_size+' | Best win share: '+(100*x.best_win_share).toFixed(1)+'%';document.getElementById('trainingUptime').textContent='Uptime: '+Math.round(x.uptime_seconds/60)+' min | Saved games: '+x.database_games;const games=await(await fetch('/api/history')).json();document.getElementById('trainingHistory').textContent=games.slice(0,10).map(g=>g.source+' '+g.scores.join(' / ')).join(' · ');const scores=games.slice(0,40).reverse().map(g=>Math.max(...g.scores));document.getElementById('trainingChart').innerHTML='<svg role=\"img\" aria-label=\"Recent winning scores\" viewBox=\"0 0 400 90\" style=\"width:100%;height:110px\"><polyline fill=\"none\" stroke=\"#60a5fa\" stroke-width=\"2\" points=\"'+scores.map((v,i)=>(i*400/Math.max(1,scores.length-1))+','+(85-Math.max(0,Math.min(80,v/2)))).join(' ')+'\"/></svg>';}catch(e){}}\nsetInterval(stats,5000);stats();\n</script></body>")
-            return self.reply(html,content_type='text/html; charset=utf-8')
-        return self.reply({'error':'Not found'},404)
+            self.send_error(404)
+        except (BrokenPipeError,ConnectionResetError):pass
+        except Exception as e:self.reply({'error':str(e)},500)
     def do_POST(self):
         if self.path=='/api/admin':
             if not ADMIN_TOKEN or not secrets.compare_digest(self.headers.get('X-Admin-Token',''),ADMIN_TOKEN):return self.reply({'error':'Unauthorized'},403)
@@ -366,39 +390,36 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError,TypeError) as exc:return self.reply({'error':str(exc)},400)
         if self.path in ('/reset','/move'):
             try:
-                n=int(self.headers.get('Content-Length','0'))
-                if n<0 or n>10000:raise ValueError('Payload too large')
-                data=json.loads(self.rfile.read(n) or b'{}')
+                n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
                 if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'))
                 else:
-                    sid=data.get('session_id','')
-                    if not isinstance(sid,str):raise ValueError('Invalid session')
-                    a=data.get('action')
-                    result=self.coord.session_action(sid,None if a is None else tuple(a))
+                    a=data.get('action');a=None if a is None else tuple(a)
+                    result=self.coord.session_action(data.get('session_id',''),a)
                 return self.reply(result)
-            except (ValueError,RuntimeError,TypeError) as e:return self.reply({'error':str(e)},400)
-        if self.path!='/api/submit':return self.reply({'error':'Not found'},404)
+            except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
+        if self.path!='/api/submit':self.send_error(404);return
         if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
-        if WORKER_TOKEN and self.headers.get('X-Worker-Token')!=WORKER_TOKEN:return self.reply({'error':'Unauthorized'},403)
+        if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
         try:
             n=int(self.headers.get('Content-Length','0'))
-            if not 0<n<=MAX_BODY:raise ValueError('Invalid body size')
-            data=json.loads(self.rfile.read(n));return self.reply(self.coord.accept(data))
-        except (ValueError,TypeError,KeyError) as e:return self.reply({'error':str(e)},400)
-    def log_message(self,fmt,*args):pass
+            if n<1 or n>MAX_BODY:raise ValueError('Invalid body size')
+            data=json.loads(self.rfile.read(n));result=self.coord.accept(data);self.reply(result)
+        except (ValueError,json.JSONDecodeError) as e:self.reply({'error':str(e)},400)
+    def log_message(self,fmt,*args):
+        if os.getenv('QWIXX_HTTP_LOG'):super().log_message(fmt,*args)
 
 def main():
     import argparse
-    p=argparse.ArgumentParser();p.add_argument('--host',default='0.0.0.0');p.add_argument('--port',type=int,default=8765)
-    args=p.parse_args();torch.set_num_threads(max(1,int(os.getenv('QWIXX_TORCH_THREADS','2'))))
+    p=argparse.ArgumentParser();p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=8765);a=p.parse_args()
+    torch.set_num_threads(max(1,int(os.getenv('QWIXX_TORCH_THREADS','2'))))
     c=Coordinator();Handler.coord=c
     trainer=threading.Thread(target=c.run,daemon=True,name='central-trainer');trainer.start()
     worker_count=max(1,min(4,int(os.getenv('QWIXX_CENTRAL_WORKERS','2'))))
     workers=[threading.Thread(target=c.run_rollouts,daemon=True,name=f'rollout-{i}') for i in range(worker_count)]
     for worker in workers:worker.start()
-    print(f'Qwixx distributed trainer on {args.host}:{args.port}',flush=True)
-    server=ThreadingHTTPServer((args.host,args.port),Handler)
-    try:server.serve_forever(poll_interval=.5)
+    server=ThreadingHTTPServer((a.host,a.port),Handler)
+    print(f'Qwixx distributed server: http://{a.host}:{a.port} | persistent data: {ROOT}',flush=True)
+    try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:
         c.stop.set();server.server_close()
