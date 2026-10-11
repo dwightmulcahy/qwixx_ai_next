@@ -99,3 +99,32 @@ def test_training_pause_and_resume(tmp_path,monkeypatch):
     c.paused.clear()
     assert not c.stats()['paused']
     c.db.close()
+
+
+def test_browser_python_deterministic_pass_parity(tmp_path,monkeypatch):
+    import json,shutil,subprocess
+    from qwixx_ai import distributed
+    if shutil.which('node') is None:pytest.skip('Node.js unavailable')
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    job=c.ticket();job['rolls']=distributed.rolls_for(job['seed'])
+    js=r'''
+const vm=require('vm');let input='';process.stdin.on('data',c=>input+=c);
+process.stdin.on('end',async()=>{
+ const {source,job}=JSON.parse(input);let submitted=null;
+ const context={console,Math,setTimeout,postMessage:()=>{},fetch:async(url,opts)=>{
+  if(url==='/api/policy')return {ok:true,json:async()=>({version:0,layers:[{w:Array.from({length:89},()=>[]),b:Array(89).fill(0)}]})};
+  if(url==='/api/job')return {ok:true,json:async()=>job};
+  if(url==='/api/submit'){submitted=JSON.parse(opts.body);return {ok:true,json:async()=>({accepted:true})}};
+  throw Error('unexpected '+url);
+ }};
+ vm.createContext(context);vm.runInContext(source,context);
+ await vm.runInContext('runGame()',context);
+ process.stdout.write(JSON.stringify(submitted));
+});
+'''
+    output=subprocess.run(['node','-e',js],input=json.dumps({'source':distributed.WORKER_JS,'job':job}),text=True,capture_output=True,check=True,timeout=30)
+    moves=json.loads(output.stdout)
+    assert moves['ticket']==job['ticket']
+    assert c.accept(moves)['accepted']
+    c.db.close()

@@ -24,7 +24,15 @@ function render(){if(!state)return;
  let b='';state.boards.forEach((board,i)=>{b+=`<h3>${i===0?'You':'AI '+i} — ${state.scores[i]} points · ${board.penalties} penalties</h3>`;
  board.rows.forEach((row,c)=>{let nums=c<2?[2,3,4,5,6,7,8,9,10,11,12]:[12,11,10,9,8,7,6,5,4,3,2];b+=`<div class="row ${['red','yellow','green','blue'][c]}"><b>${['Red','Yellow','Green','Blue'][c]}</b>`+nums.map(n=>`<span class="cell ${row.includes(n)?'mark':''}">${row.includes(n)?'✓':n}</span>`).join('')+'</div>'})});document.getElementById('boards').innerHTML=b;
  document.getElementById('actions').innerHTML=(state.explanations?'<h4>Move analysis</h4><p>'+state.explanations.map(x=>x.move+': +'+x.immediate+' points, skips '+x.skipped+' numbers'+(x.lock?', locks row':'')).join(' · ')+'</p>':'')+(state.done?'<b>Final scores above. Start a new game.</b>':`<button onclick="act(null)">Pass</button>`+state.legal.map(a=>`<button class="legal" onclick='act(${JSON.stringify(a)})'>${['Red','Yellow','Green','Blue'][a[0]]} ${a[1]} ${a[2]?'🔒':''}</button>`).join(''));}
-reset();</script></body></html>'''
+reset();</script><details id="rules-faq"><summary>Qwixx rules & FAQ</summary>
+<h3>White dice (everyone)</h3><p>Every player may mark one number matching the sum of the two white dice, or pass. These decisions are simultaneous, including row locks.</p>
+<h3>Colored die (active player only)</h3><p>The active player may combine either white die with one available colored die and mark that row, or pass.</p>
+<h3>What does left to right mean?</h3><p>Numbers must be marked strictly from left to right. Skipped numbers are permanently unavailable.</p>
+<h3>What is a misthrow penalty?</h3><p>Only the active player takes a misthrow penalty when neither phase produces a mark. Each penalty costs five points.</p>
+<h3>How does the padlock work?</h3><p>After five prior marks in a row, marking its far-right number also marks the padlock, closes that color to everyone and removes the colored die. Multiple players can lock during the same white-dice phase.</p>
+<h3>When does the game end?</h3><p>After the second color is locked or any player receives their fourth misthrow penalty. Resolve simultaneous white-dice choices first.</p>
+<h3>How is scoring calculated?</h3><p>Each row scores triangular points based on its marks, including the padlock bonus mark. Subtract five points per penalty. The highest score wins; ties share the win.</p>
+</details></body></html>'''
 
 class Session:
     def __init__(self,model=None,difficulty='champion'):
