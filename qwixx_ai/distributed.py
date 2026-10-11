@@ -268,7 +268,7 @@ const order=[Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>i+
 async function refreshPolicy(){const r=await fetch('/api/policy');if(!r.ok)throw Error('Policy unavailable');policy=await r.json();}
 function inference(input){let v=input;for(let li=0;li<policy.layers.length;li++){const l=policy.layers[li],out=l.b.map((bias,i)=>{let z=bias,w=l.w[i];for(let j=0;j<v.length;j++)z+=w[j]*v[j];return li===policy.layers.length-1?z:Math.max(0,z)});v=out;}return v;}
 async function runGame(){
- if(!policy)await refreshPolicy();
+ if(!policy||completed%20===0)await refreshPolicy();
  const job=await (await fetch('/api/job')).json();
  let rows=Array.from({length:4},()=>Array.from({length:4},()=>[])),pen=[0,0,0,0],locks=new Set(),whiteLocks=new Set(),active=0,phase=0,marks=0,turn=0,actions=[];
  const rolls=job.rolls;let dice=rolls[0];
