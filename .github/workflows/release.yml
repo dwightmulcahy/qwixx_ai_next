@@ -1,0 +1,81 @@
+name: Manual Docker release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing version tag to publish (e.g. v1.2.3); created manually'
+        required: true
+        type: string
+      publish_github_release:
+        description: 'Create a GitHub release for this existing tag'
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: manual-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Validate tag format
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || exit 1
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify manually created tag points to a commit on main
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          git rev-parse --verify "refs/tags/$VERSION^{commit}"
+          git merge-base --is-ancestor "refs/tags/$VERSION^{commit}" origin/main
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: qwixx-ai:release-check
+      - name: Container smoke test
+        run: |
+          set -euo pipefail
+          docker run -d --name qwixx-release -p 127.0.0.1:8765:8765 qwixx-ai:release-check
+          trap 'docker logs qwixx-release || true; docker rm -f qwixx-release || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --max-time 5 http://127.0.0.1:8765/health; then exit 0; fi
+            sleep 3
+          done
+          exit 1
+      - name: Publish versioned container
+        env:
+          VERSION: ${{ inputs.version }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE,,}"
+          docker tag qwixx-ai:release-check "$IMAGE:$VERSION"
+          docker push "$IMAGE:$VERSION"
+      - name: Publish optional GitHub release
+        if: inputs.publish_github_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release view "$VERSION" >/dev/null 2>&1 && { echo "Release already exists"; exit 1; }
+          gh release create "$VERSION" --verify-tag --generate-notes --title "$VERSION"
