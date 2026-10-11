@@ -355,6 +355,14 @@ class Handler(BaseHTTPRequestHandler):
         b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
     def authorized_worker(self):
         return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token',''),WORKER_TOKEN)
+    def auth_token(self):
+        from http.cookies import SimpleCookie
+        cookie=SimpleCookie()
+        try:cookie.load(self.headers.get('Cookie',''))
+        except Exception:return ''
+        return cookie['qwixx_auth'].value if 'qwixx_auth' in cookie else ''
+    def player_id(self):
+        return self.coord.player_stats.authenticate(self.auth_token())
     def do_GET(self):
         try:
             if self.path=='/':return self.reply(DASHBOARD_HTML,ctype='text/html; charset=utf-8')
@@ -365,11 +373,15 @@ class Handler(BaseHTTPRequestHandler):
                 try:limit=int(self.path.split('limit=',1)[1].split('&',1)[0]) if 'limit=' in self.path else 100
                 except ValueError:limit=100
                 return self.reply({'games':self.coord.history(limit)})
-            if self.path=='/api/players':return self.reply({'players':self.coord.player_stats.profiles()})
+            if self.path=='/api/auth/me':
+                pid=self.player_id()
+                return self.reply({'player':self.coord.player_stats.profile(pid) if pid else None})
             if self.path.startswith('/api/player-stats?'):
                 from urllib.parse import parse_qs, urlsplit
                 query=parse_qs(urlsplit(self.path).query)
-                return self.reply(self.coord.player_stats.stats(query.get('player_id',[''])[0],query.get('difficulty',[None])[0]))
+                pid=self.player_id()
+                if not pid:return self.reply({'error':'Sign in required'},401)
+                return self.reply(self.coord.player_stats.stats(pid,query.get('difficulty',[None])[0]))
             if self.path=='/api/policy':return self.reply(self.coord.policy_export())
             if self.path=='/api/job':
                 if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
@@ -398,19 +410,32 @@ class Handler(BaseHTTPRequestHandler):
                 else:raise ValueError('Unknown command')
                 return self.reply({'ok':True,'paused':self.coord.paused.is_set()})
             except (ValueError,TypeError) as exc:return self.reply({'error':str(exc)},400)
-        if self.path=='/api/players':
+        if self.path in ('/api/auth/request','/api/auth/verify','/api/auth/logout'):
             try:
+                if self.limited():return self.reply({'error':'Too many requests'},429)
                 n=int(self.headers.get('Content-Length','0'))
-                if n<1 or n>512:raise ValueError('Invalid body size')
-                return self.reply(self.coord.player_stats.create_profile(json.loads(self.rfile.read(n)).get('name')))
-            except (ValueError,TypeError) as e:return self.reply({'error':str(e)},400)
+                if n<0 or n>1024:raise ValueError('Invalid body size')
+                data=json.loads(self.rfile.read(n) or b'{}')
+                if self.path=='/api/auth/request':return self.reply(self.coord.player_stats.request_code(data.get('email'),data.get('name')))
+                if self.path=='/api/auth/logout':
+                    self.coord.player_stats.logout(self.auth_token())
+                    self.send_response(200);self.send_header('Set-Cookie','qwixx_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'{}');return
+                result=self.coord.player_stats.verify_code(data.get('email'),data.get('code'))
+                cookie='qwixx_auth='+result['token']+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000'
+                if self.headers.get('X-Forwarded-Proto','').lower()=='https' or os.getenv('QWIXX_COOKIE_SECURE','false').lower()=='true':cookie+='; Secure'
+                body=json.dumps({'player':result['player']}).encode()
+                self.send_response(200);self.send_header('Set-Cookie',cookie);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
+            except (ValueError,TypeError,RuntimeError) as e:return self.reply({'error':str(e)},400 if isinstance(e,ValueError) else 503)
         if self.path in ('/reset','/move'):
             try:
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
-                if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'),data.get('player_id'))
+                if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'),self.player_id())
                 else:
                     a=data.get('action');a=None if a is None else tuple(a)
-                    result=self.coord.session_action(data.get('session_id',''),a)
+                    sid=data.get('session_id','')
+                    entry=self.coord.sessions.get(sid)
+                    if entry and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
+                    result=self.coord.session_action(sid,a)
                 return self.reply(result)
             except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
         if self.path!='/api/submit':self.send_error(404);return
