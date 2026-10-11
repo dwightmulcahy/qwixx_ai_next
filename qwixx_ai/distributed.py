@@ -186,7 +186,7 @@ async function runGame(){
   else for(let c=0;c<4;c++)candidate.push([c,dice[0]+dice[1]]);
   let out=[];
   for(const [c,n] of candidate){if(locks.has(c))continue;let idx=order[c].indexOf(n),row=rows[who][c];if(idx<0||row.length&&idx<=order[c].indexOf(row[row.length-1]))continue;
-   out.push([c,n,false]);if(idx===10&&row.length>=5)out.push([c,n,true]);}
+   if(idx===10){if(row.length>=5)out.push([c,n,true]);}else out.push([c,n,false]);}
   return out;
  }
  function encode(a){if(a===null)return 0;return 1+22*a[0]+2*order[a[0]].indexOf(a[1])+(a[2]?1:0)}

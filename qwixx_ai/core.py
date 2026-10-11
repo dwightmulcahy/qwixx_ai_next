@@ -9,7 +9,9 @@ class Board:
     rows:list=field(default_factory=lambda:[[] for _ in range(4)])
     penalties:int=0
     def can(self,c,n,locks):
-        return c not in locks and n in ORDER[c] and (not self.rows[c] or ORDER[c].index(n)>ORDER[c].index(self.rows[c][-1]))
+        return (c not in locks and n in ORDER[c]
+                and (not self.rows[c] or ORDER[c].index(n)>ORDER[c].index(self.rows[c][-1]))
+                and (n != ORDER[c][-1] or len(self.rows[c]) >= 5))
     def can_lock(self,c,n,locks):
         return self.can(c,n,locks) and n==ORDER[c][-1] and len(self.rows[c])>=5
     def score(self,locks):
@@ -44,8 +46,10 @@ class Game:
         out=[]
         for c,num in sorted(candidates):
             if b.can(c,num,self.locks):
-                out.append((c,num,False))
-                if b.can_lock(c,num,self.locks):out.append((c,num,True))
+                if b.can_lock(c,num,self.locks):
+                    out.append((c,num,True))
+                else:
+                    out.append((c,num,False))
         return out
     def step(self,action):
         if self.done:raise RuntimeError('Game finished')

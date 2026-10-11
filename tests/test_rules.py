@@ -67,3 +67,27 @@ def test_deterministic_game():
 def test_tournament():
     scores,shares=play([heuristic]*4,seed=5)
     assert len(scores)==4 and abs(sum(shares)-1)<1e-9
+
+
+def test_final_number_requires_five_prior_marks():
+    for color in range(4):
+        b=Board()
+        last=12 if color<2 else 2
+        assert not b.can(color,last,set())
+        b.rows[color]=list(range(2,7)) if color<2 else list(range(12,7,-1))
+        assert b.can(color,last,set())
+        assert b.can_lock(color,last,set())
+
+
+def test_final_number_only_available_with_lock_action():
+    g=Game(seed=4)
+    g.dice=(6,6,6,6,6,6)
+    assert (0,12,False) not in g.legal()
+    assert (0,12,True) not in g.legal()
+    g.boards[0].rows[0]=[2,3,4,5,6]
+    assert (0,12,True) in g.legal()
+    assert (0,12,False) not in g.legal()
+    with pytest.raises(ValueError):
+        g.step((0,12,False))
+    g.step((0,12,True))
+    assert 0 in g.locks
