@@ -44,3 +44,35 @@ def test_worker_rate_limit_logic():
     f=Fake()
     assert all(not f.limited() for _ in range(120))
     assert f.limited()
+
+
+def test_priority_replay_alignment_and_exploration(tmp_path,monkeypatch):
+    from qwixx_ai import distributed
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    sample=(None,0,0.0,None,False,None)
+    c._add_transitions([sample,sample,sample])
+    assert len(c.priorities)==len(c.replay)==3
+    assert c.exploration()==0.30
+    c.updates=100000
+    assert 0.04<=c.exploration()<0.30
+    c.db.close()
+
+
+def test_replay_restores_from_saved_deterministic_games(tmp_path,monkeypatch):
+    from qwixx_ai import distributed
+    from qwixx_ai.core import Game
+    from qwixx_ai.env import encode
+    from qwixx_ai.agents import heuristic
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    g=Game(seed=7);moves=[]
+    while not g.done:
+        action=heuristic(g)
+        moves.append(encode(action));g.step(action)
+    with c.lock:c._record('browser',g.scores(),moves,7)
+    c.db.close()
+    restored=distributed.Coordinator()
+    assert len(restored.replay)>0
+    assert len(restored.priorities)==len(restored.replay)
+    restored.db.close()

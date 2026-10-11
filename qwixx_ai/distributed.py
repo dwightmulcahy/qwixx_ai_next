@@ -23,7 +23,7 @@ MAX_PENDING=500
 class Coordinator:
     def __init__(self):
         self.lock=threading.RLock();self.rng=random.Random()
-        self.pending={};self.replay=deque(maxlen=50000)
+        self.pending={};self.replay=deque(maxlen=50000);self.priorities=deque(maxlen=50000)
         self.db=sqlite3.connect(ROOT/'training.sqlite3',check_same_thread=False,timeout=20)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY, source TEXT NOT NULL, scores TEXT NOT NULL, moves TEXT, created REAL NOT NULL, seed INTEGER)')
@@ -97,7 +97,7 @@ class Coordinator:
                 reward=(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1)
                 transitions.append((s,a,reward,observe(game),True,mask(game)))
         with self.lock:
-            self.replay.extend(transitions);self.games+=1;self.browser_games+=1
+            self._add_transitions(transitions);self.games+=1;self.browser_games+=1
             self._record('browser',scores,moves,seed)
         return {'accepted':True,'scores':scores,'transitions':len(transitions)}
     def central_rollout(self):
@@ -110,7 +110,7 @@ class Coordinator:
                 transitions.append((s,a,(g.scores()[who]-start)/25,observe(g),False,mask(g)))
             with self.lock:
                 policy=self.rng.choice(list(self.league)) if self.league and self.rng.random()<.15 else (self.best_model if self.best_model is not None and self.rng.random()<.35 else self.model)
-                a=choose(policy,g,epsilon=.18) if self.rng.random()<.65 else (heuristic(g) if self.rng.random()<.8 else random_agent(g))
+                a=choose(policy,g,epsilon=self.exploration()) if self.rng.random()<.65 else (heuristic(g) if self.rng.random()<.8 else random_agent(g))
             last[who]=(observe(g).copy(),encode(a),g.scores()[who]);moves.append(encode(a));g.step(a)
         scores=g.scores()
         for who,item in enumerate(last):
@@ -118,8 +118,13 @@ class Coordinator:
                 s,a,start=item
                 transitions.append((s,a,(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1),observe(g),True,mask(g)))
         with self.lock:
-            self.replay.extend(transitions);self.games+=1;self.central_games+=1
+            self._add_transitions(transitions);self.games+=1;self.central_games+=1
             self._record('central',scores,moves,seed)
+    def exploration(self):
+        return max(0.04,0.30*(0.99997**self.updates))
+    def _add_transitions(self,items):
+        self.replay.extend(items)
+        self.priorities.extend([max(self.priorities,default=1.0)]*len(items))
     def _record(self,source,scores,moves,seed=None):
         self.db.execute('INSERT INTO games(source,scores,moves,created,seed) VALUES(?,?,?,?,?)',(source,json.dumps(scores),json.dumps(moves) if moves is not None else None,time.time(),seed))
         self.db.commit()
@@ -143,7 +148,7 @@ class Coordinator:
                     if item is not None:
                         state,action,start=item
                         transitions.append((state,action,(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1),observe(g),True,mask(g)))
-                self.replay.extend(transitions)
+                self._add_transitions(transitions)
             except (ValueError,TypeError,IndexError):continue
     def history(self,limit=100):
         with self.lock:
@@ -152,10 +157,12 @@ class Coordinator:
     def learn(self):
         with self.lock:
             if len(self.replay)<256:return
-            # Reward-aware replay prioritizes rare consequential decisions.
+            # Proportional TD-error prioritized experience replay.
             population=list(self.replay)
-            weights=[0.1+abs(float(item[2])) for item in population]
-            batch=self.rng.choices(population,weights=weights,k=64)
+            weights=np.asarray(self.priorities,dtype=np.float64)**0.6
+            probabilities=weights/weights.sum()
+            indices=self.rng.choices(range(len(population)),weights=probabilities,k=64)
+            batch=[population[i] for i in indices]
             ss,aa,rr,ns,dd,mm=zip(*batch)
             q=self.model(torch.from_numpy(np.stack(ss))).gather(1,torch.tensor(aa).long()[:,None]).squeeze(1)
             with torch.no_grad():
@@ -166,8 +173,13 @@ class Coordinator:
                 online_next[~torch.from_numpy(np.stack(mm))]=-1e9
                 best_actions=online_next.argmax(1,keepdim=True)
                 target=torch.tensor(rr,dtype=torch.float32)+.99*(1-torch.tensor(dd,dtype=torch.float32))*nextq.gather(1,best_actions).squeeze(1)
-            loss=nn.functional.smooth_l1_loss(q,target)
+            errors=(q-target).detach().abs().cpu().numpy()
+            importance=(len(population)*probabilities[indices])**(-0.4)
+            importance=importance/importance.max()
+            losses=nn.functional.smooth_l1_loss(q,target,reduction='none')
+            loss=(losses*torch.tensor(importance,dtype=torch.float32)).mean()
             self.optimizer.zero_grad();loss.backward();nn.utils.clip_grad_norm_(self.model.parameters(),5);self.optimizer.step()
+            for index,error in zip(indices,errors):self.priorities[index]=float(error)+0.01
             self.updates+=1;self.last_loss=round(float(loss.item()),5)
             if self.updates%300==0:self.target.load_state_dict(self.model.state_dict())
     def checkpoint(self):
@@ -183,7 +195,10 @@ class Coordinator:
             result=evaluate(self.model,192,seed=123450)
             self.last_eval=result
             # Promotion requires an improvement on fixed evaluation seeds.
-            if result['win_share']>self.best+0.001:
+            # Candidate must outperform champion under identical evaluation seeds.
+            champion_eval=evaluate(self.best_model,192,seed=123450) if self.best_model is not None else None
+            result['champion_win_share']=champion_eval['win_share'] if champion_eval else None
+            if champion_eval is None or result['win_share']>champion_eval['win_share']+0.03:
                 candidate=ROOT/'candidate.pt'
                 save(self.model,candidate,updates=self.updates,games=self.games,win_share=result['win_share'])
                 candidate.replace(ROOT/'best.pt')
@@ -224,7 +239,7 @@ class Coordinator:
                     layers.append({'w':layer.weight.detach().tolist(),'b':layer.bias.detach().tolist()})
             return {'version':self.version,'layers':layers,'observation_size':self.obs_size}
     def stats(self):
-        return {'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
+        return {'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run(self):
         last=time.monotonic();cycles=0
         while not self.stop.is_set():
