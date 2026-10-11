@@ -292,7 +292,7 @@ async function runGame(){
   else {const q=inference(observe());a=options.reduce((best,x)=>q[encode(x)]>q[encode(best)]?x:best,null);}
   actions.push(encode(a));let who=actor();if(a){rows[who][a[0]].push(a[1]);if(a[2]){locks.add(a[0]);if(phase<4)whiteLocks.add(a[0]);}if(who===active)marks++}
   if(phase===4&&marks===0)pen[active]++;
-  if(locks.size>=2||pen.some(x=>x>=4))break;
+  if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;
   if(phase<4){phase++;if(phase===4)whiteLocks.clear();}else{turn++;active=(active+1)%4;phase=0;marks=0;whiteLocks.clear();dice=rolls[turn];if(!dice)throw Error('Dice stream exhausted')}
  }
  const r=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:job.ticket,moves:actions})});
