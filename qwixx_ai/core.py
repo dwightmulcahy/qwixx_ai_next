@@ -36,13 +36,17 @@ class Game:
         return (self.active+self.phase)%self.n
     @property
     def done(self):return len(self.locks)>=2 or any(b.penalties>=4 for b in self.boards)
+    @property
+    def available_colors(self):
+        """Colored dice still in play; locked dice cannot be selected."""
+        return tuple(c for c in range(4) if c not in self.locks)
     def scores(self):return [b.score(self.locks) for b in self.boards]
     def legal(self):
         b=self.boards[self.actor]
         if self.phase==self.n:
-            candidates={(c,self.dice[w]+self.dice[c+2]) for c in range(4) if c not in self.locks for w in (0,1)}
+            candidates={(c,self.dice[w]+self.dice[c+2]) for c in self.available_colors for w in (0,1)}
         else:
-            candidates={(c,self.dice[0]+self.dice[1]) for c in range(4) if c not in self.locks}
+            candidates={(c,self.dice[0]+self.dice[1]) for c in self.available_colors}
         out=[]
         for c,num in sorted(candidates):
             if b.can(c,num,self.locks):
