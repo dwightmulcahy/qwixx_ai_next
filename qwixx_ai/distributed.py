@@ -284,13 +284,17 @@ setInterval(drawDashboard,5000);drawDashboard();
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
     rate_lock=threading.Lock();rate_buckets={}
-    def limited(self):
+    def limited(self, training=False):
         now=time.monotonic();ip=self.client_address[0]
+        # Training jobs generate two requests per game. Keep their quota
+        # separate from authentication and other interactive API requests.
+        key=(ip, 'training' if training else 'general')
+        limit=600 if training else 120
         with self.rate_lock:
-            bucket=[t for t in self.rate_buckets.get(ip,[]) if now-t<60]
-            limited=len(bucket)>=120
+            bucket=[t for t in self.rate_buckets.get(key,[]) if now-t<60]
+            limited=len(bucket)>=limit
             if not limited:bucket.append(now)
-            self.rate_buckets[ip]=bucket
+            self.rate_buckets[key]=bucket
         return limited
     def reply(self,obj,status=200,ctype='application/json'):
         b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
@@ -321,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(self.coord.player_stats.stats(pid,query.get('difficulty',[None])[0]))
             if self.path=='/api/policy':return self.reply(self.coord.policy_export())
             if self.path=='/api/job':
-                if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
+                if self.limited(training=True):return self.reply({'error':'Rate limit exceeded'},429)
                 if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
                 job=self.coord.ticket();job['rolls']=rolls_for(job['seed']);return self.reply(job)
             self.send_error(404)
@@ -371,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(result)
             except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
         if self.path!='/api/submit':self.send_error(404);return
-        if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
+        if self.limited(training=True):return self.reply({'error':'Rate limit exceeded'},429)
         if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
         try:
             n=int(self.headers.get('Content-Length','0'))
