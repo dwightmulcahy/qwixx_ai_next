@@ -274,75 +274,16 @@ WORKER_JS=r'''
 let enabled=false,completed=0,busy=false,policy=null;
 const inWorker=typeof document==='undefined';
 const order=[Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>12-i),Array.from({length:11},(_,i)=>12-i)];
-async function refreshPolicy(){const r=await fetch('/api/policy');if(!r.ok)throw Error('Policy unavailable');policy=await r.json();}
-function inference(input){let v=input;for(let li=0;li<policy.layers.length;li++){const l=policy.layers[li],out=l.b.map((bias,i)=>{let z=bias,w=l.w[i];for(let j=0;j<v.length;j++)z+=w[j]*v[j];return li===policy.layers.length-1?z:Math.max(0,z)});v=out;}return v;}
-async function runGame(){
- if(!policy||completed%20===0)await refreshPolicy();
- const job=await (await fetch('/api/job')).json();
- let rows=Array.from({length:4},()=>Array.from({length:4},()=>[])),pen=[0,0,0,0],locks=new Set(),whiteLocks=new Set(),active=0,phase=0,marks=0,turn=0,actions=[];
- const rolls=job.rolls;let dice=rolls[0];
- function actor(){return phase===0||phase===4?active:(active+phase)%4}
- function legal(){let who=actor(),candidate=[];
-  if(phase===4){for(let c=0;c<4;c++)for(let w=0;w<2;w++)candidate.push([c,dice[w]+dice[c+2]])}
-  else for(let c=0;c<4;c++)candidate.push([c,dice[0]+dice[1]]);
-  let out=[];
-  for(const [c,n] of candidate){if(locks.has(c)&&!(phase<4&&whiteLocks.has(c)))continue;let idx=order[c].indexOf(n),row=rows[who][c];if(idx<0||row.length&&idx<=order[c].indexOf(row[row.length-1]))continue;
-   if(idx===10){if(row.length>=5)out.push([c,n,true]);}else out.push([c,n,false]);}
-  return out;
- }
- function encode(a){if(a===null)return 0;return 1+22*a[0]+2*order[a[0]].indexOf(a[1])+(a[2]?1:0)}
- function observe(){let v=[];for(let b=0;b<4;b++){for(let c=0;c<4;c++)for(let n of order[c])v.push(rows[b][c].includes(n)?1:0);v.push(pen[b]/4)}
-  for(let c=0;c<4;c++)v.push(locks.has(c)?1:0);for(let x of dice)v.push(x/6);
-  v.push(active/4,actor()/4,phase/5,Math.min(turn/100,1),marks/2);return v;}
- for(let t=0;t<1000;t++){
-  if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;
-  const options=[null,...legal()];let a;
-  if(Math.random()<.18)a=options[Math.floor(Math.random()*options.length)];
-  else {const q=inference(observe());a=options.reduce((best,x)=>q[encode(x)]>q[encode(best)]?x:best,null);}
-  actions.push(encode(a));let who=actor();if(a){rows[who][a[0]].push(a[1]);if(a[2]){locks.add(a[0]);if(phase<4)whiteLocks.add(a[0]);}if(who===active)marks++}
-  if(phase===4&&marks===0)pen[active]++;
-  if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;
-  if(phase<4){phase++;if(phase===4)whiteLocks.clear();}else{turn++;active=(active+1)%4;phase=0;marks=0;whiteLocks.clear();dice=rolls[turn];if(!dice)throw Error('Dice stream exhausted')}
- }
- const r=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:job.ticket,moves:actions})});
- if(!r.ok)throw Error((await r.json()).error||'Upload failed');completed++;
-}
-async function loop(){if(!enabled||busy)return;busy=true;try{await runGame();if(inWorker)postMessage({type:'progress',completed,version:policy.version});else document.getElementById('workerStatus').textContent=`Contributed ${completed} verified games · policy ${policy.version}`;}catch(e){if(inWorker)postMessage({type:'error',message:e.message});else document.getElementById('workerStatus').textContent='Worker error: '+e.message;}finally{busy=false;if(enabled)setTimeout(loop,1000)}}
-function toggleWorker(){enabled=!enabled;if(!inWorker)document.getElementById('workerToggle').textContent=enabled?'Stop browser training':'Start browser training';if(enabled)loop()}
-if(inWorker)onmessage=e=>{if(e.data==='start'&&!enabled)toggleWorker();if(e.data==='stop'&&enabled)toggleWorker()};
-async function stats(){try{const x=await(await fetch('/api/stats')).json();document.getElementById('trainingStats').textContent=`Central games: ${x.central_games} | Browser games: ${x.browser_games} | Updates: ${x.updates} | Replay: ${x.replay_size} | Best win share: ${(100*x.best_win_share).toFixed(1)}% | Sessions: ${x.sessions}`;if(policy&&x.model_version!==policy.version)await refreshPolicy();}catch(e){}}
-if(!inWorker){setInterval(stats,5000);stats();}
+async function refreshPolicy(){const r=await fetch('/api/policy');if(!r.ok)throw Error('policy');policy=await r.json()}
+function dot(w,x,b){let y=b;for(let i=0;i<x.length;i++)y+=w[i]*x[i];return y}
+function infer(obs){let x=obs;for(let l=0;l<policy.layers.length;l++){const p=policy.layers[l],y=p.w.map((w,i)=>dot(w,x,p.b[i]));x=l<policy.layers.length-1?y.map(v=>Math.max(0,v)):y}return x}
+function legal(board,c,n,locks){const row=board.rows[c];if(locks.includes(c))return false;const idx=order[c].indexOf(n);if(idx<0||row.includes(n))return false;if(row.some(x=>order[c].indexOf(x)>=idx))return false;if(idx===10&&row.length<5)return false;return true}
+function maskState(s){const out=Array(89).fill(false);out[88]=true;const sums=s.phase===s.boards.length?s.dice.slice(0,2).flatMap(w=>s.dice.slice(2).map((c,i)=>[i,w+c])):[[null,s.dice[0]+s.dice[1]]];for(const [c,n] of sums){for(let color=0;color<4;color++){if(c!==null&&c!==color)continue;if(legal(s.boards[s.active],color,n,s.locks))out[color*22+(n-2)]=true}}return out}
+function encodeState(s){const out=[];for(const b of s.boards){for(let c=0;c<4;c++){for(const n of order[c])out.push(b.rows[c].includes(n)?1:0)}out.push(b.penalties/4)}for(const d of s.dice)out.push(d/6);out.push(s.active/4,s.phase/5,s.turn/100);return out}
+async function play(){if(busy||!enabled)return;busy=true;try{if(!policy)await refreshPolicy();const j=await (await fetch('/api/job')).json();let s={boards:Array.from({length:4},()=>({rows:[[],[],[],[]],penalties:0})),locks:[],active:0,phase:0,turn:0,dice:j.rolls[0]},moves=[];for(let step=0;step<j.max_moves;step++){const m=maskState(s),q=infer(encodeState(s));let a=88,b=-Infinity;for(let i=0;i<89;i++)if(m[i]&&q[i]>b){b=q[i];a=i}moves.push(a);const rr=await (await fetch('/api/sim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:s,action:a,rolls:j.rolls})})).json();s=rr.state;if(rr.done)break}const r=await fetch('/api/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:j.ticket,moves})});if(r.ok)completed++;else console.warn('result rejected',await r.text())}catch(e){console.warn('worker error',e);await new Promise(r=>setTimeout(r,2000))}finally{busy=false;if(enabled)setTimeout(play,0)}}
+function start(){enabled=true;play()}function stop(){enabled=false}
+if(inWorker)self.onmessage=e=>{if(e.data==='start')start();if(e.data==='stop')stop();if(e.data==='count')postMessage(completed)};
 '''
-
-# Server supplies exact dice sequence; do not trust browser RNG or replay claims.
-def rolls_for(seed):
-    g=Game(seed=seed)
-    return [g.dice]+[tuple(g.rng.randint(1,6) for _ in range(6)) for _ in range(999)]
-
-DASHBOARD_HTML=GAME_HTML.replace('</body>', '''
-<hr id="training-dashboard"><h2>Distributed training</h2>
-<p id="trainingStats">Loading training status…</p>
-<button id="workerToggle" onclick="toggleBrowserWorkers()">Start browser training</button>
-<p id="workerStatus" class="hint">Browser worker idle. Up to two worker threads will contribute verified games without blocking the game UI.</p>
-<canvas id="trainingChart" width="860" height="180" style="background:#0b1220;border-radius:8px;max-width:100%"></canvas>
-<h3>Recent training games</h3><div id="trainingHistory" class="hint">Loading…</div>
-<script src="/worker.js"></script><script>
-let browserWorkers=[];
-function toggleBrowserWorkers(){
- if(browserWorkers.length){for(const w of browserWorkers)w.postMessage('stop');browserWorkers=[];document.getElementById('workerToggle').textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser workers stopped.';return}
- let count=Math.min(2,navigator.hardwareConcurrency||1);
- for(let i=0;i<count;i++){let w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress')document.getElementById('workerStatus').textContent=`Browser workers active · latest worker completed ${e.data.completed} · policy ${e.data.version}`;if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');browserWorkers.push(w)}
- document.getElementById('workerToggle').textContent='Stop browser training';
-}
-let metricPoints=[];
-async function drawDashboard(){
- try{const x=await(await fetch('/api/stats')).json();metricPoints.push(x);metricPoints=metricPoints.slice(-60);
- document.getElementById('trainingStats').textContent=`Games ${x.games} · central ${x.central_games} · browser ${x.browser_games} · updates ${x.updates} · replay ${x.replay_size} · loss ${x.loss??'—'} · best ${(100*x.best_win_share).toFixed(1)}% · sessions ${x.sessions} · DB ${x.database_games}`;
- const c=document.getElementById('trainingChart'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#60a5fa';ctx.beginPath();metricPoints.forEach((p,i)=>{let xx=i*Math.max(1,c.width/59),yy=c.height-20-Math.min(140,(p.updates/(metricPoints[metricPoints.length-1].updates||1))*140);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.stroke();
- const h=await(await fetch('/api/history?limit=12')).json();document.getElementById('trainingHistory').textContent=h.games.map(g=>`${g.source}: ${g.scores.join('/')}`).join(' · ')||'No persisted games yet.';
- }catch(e){document.getElementById('trainingStats').textContent='Training status unavailable: '+e.message}}
-setInterval(drawDashboard,5000);drawDashboard();
-</script></body>''')
 
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
@@ -430,7 +371,7 @@ class Handler(BaseHTTPRequestHandler):
                 body=json.dumps({'player':result['player']}).encode()
                 self.send_response(200);self.send_header('Set-Cookie',cookie);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             except (ValueError,TypeError,RuntimeError) as e:return self.reply({'error':str(e)},400 if isinstance(e,ValueError) else 503)
-            except (smtplib.SMTPException,OSError) as e:
+            except (smtplib.SMTPException,OSError):
                 logging.exception('Email verification SMTP delivery failed')
                 return self.reply({'error':'Email delivery failed. Check Gmail app password and SMTP connectivity.'},503)
         if self.path in ('/reset','/move'):
@@ -439,39 +380,46 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'),self.player_id())
                 else:
                     a=data.get('action');a=None if a is None else tuple(a)
-                    sid=data.get('session_id','')
-                    entry=self.coord.sessions.get(sid)
-                    if entry and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
-                    result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
+                    result=self.coord.session_action(data.get('session_id'),a,data.get('expected_turn'),data.get('expected_phase'))
                 return self.reply(result)
-            except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
-        if self.path!='/api/submit':self.send_error(404);return
-        if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
-        if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
-        try:
-            n=int(self.headers.get('Content-Length','0'))
-            if n<1 or n>MAX_BODY:raise ValueError('Invalid body size')
-            data=json.loads(self.rfile.read(n));result=self.coord.accept(data);self.reply(result)
-        except (ValueError,json.JSONDecodeError) as e:self.reply({'error':str(e)},400)
-    def log_message(self,fmt,*args):
-        if os.getenv('QWIXX_HTTP_LOG'):super().log_message(fmt,*args)
+            except (ValueError,TypeError) as e:return self.reply({'error':str(e)},400)
+        if self.path=='/api/result':
+            if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
+            if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
+            try:
+                n=int(self.headers.get('Content-Length','0'))
+                if n<2 or n>MAX_BODY:raise ValueError('Invalid body')
+                return self.reply(self.coord.accept(json.loads(self.rfile.read(n))))
+            except (ValueError,TypeError,json.JSONDecodeError) as e:return self.reply({'error':str(e)},400)
+        if self.path=='/api/sim':
+            if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
+            if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
+            try:
+                n=int(self.headers.get('Content-Length','0'))
+                if n<2 or n>MAX_BODY:raise ValueError('Invalid body')
+                data=json.loads(self.rfile.read(n));s=data['state'];a=data['action'];rolls=data['rolls']
+                g=Game(seed=0);g.active=s['active'];g.phase=s['phase'];g.turn=s['turn'];g.dice=tuple(s['dice']);g.locks=set(s['locks'])
+                for i,b in enumerate(s['boards']):g.boards[i].rows=[list(r) for r in b['rows']];g.boards[i].penalties=b['penalties']
+                if not mask(g)[a]:raise ValueError('Illegal move')
+                g.step(decode(a))
+                if not g.done and g.phase==0:g.dice=tuple(rolls[g.turn])
+                return self.reply({'state':{'boards':[{'rows':b.rows,'penalties':b.penalties} for b in g.boards],'locks':list(g.locks),'active':g.active,'phase':g.phase,'turn':g.turn,'dice':g.dice},'done':g.done})
+            except (ValueError,TypeError,KeyError,IndexError,json.JSONDecodeError) as e:return self.reply({'error':str(e)},400)
+        self.send_error(404)
+
+def rolls_for(seed):
+    r=random.Random(seed);return [[r.randint(1,6) for _ in range(6)] for _ in range(1000)]
 
 def main():
     import argparse
     p=argparse.ArgumentParser();p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=8765);a=p.parse_args()
-    torch.set_num_threads(max(1,int(os.getenv('QWIXX_TORCH_THREADS','2'))))
     c=Coordinator();Handler.coord=c
-    trainer=threading.Thread(target=c.run,daemon=True,name='central-trainer');trainer.start()
-    worker_count=max(1,min(4,int(os.getenv('QWIXX_CENTRAL_WORKERS','2'))))
-    workers=[threading.Thread(target=c.run_rollouts,daemon=True,name=f'rollout-{i}') for i in range(worker_count)]
-    for worker in workers:worker.start()
+    threading.Thread(target=c.run,daemon=True).start()
+    for _ in range(max(0,int(os.getenv('QWIXX_CENTRAL_WORKERS','0')))):threading.Thread(target=c.run_rollouts,daemon=True).start()
     server=ThreadingHTTPServer((a.host,a.port),Handler)
     print(f'Qwixx distributed server: http://{a.host}:{a.port} | persistent data: {ROOT}',flush=True)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
-    finally:
-        c.stop.set();server.server_close()
-        for worker in workers:worker.join(timeout=10)
-        trainer.join(timeout=10)
-        c.checkpoint();c.db.close()
+    finally:c.stop.set();server.server_close();c.checkpoint()
+
 if __name__=='__main__':main()
