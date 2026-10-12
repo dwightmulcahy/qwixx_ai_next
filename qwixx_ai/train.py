@@ -10,6 +10,7 @@ from .env import observe,mask,encode
 from .model import network,choose,save
 from .agents import heuristic,random_agent
 from .tournament import evaluate
+from .learning import potential, shaped_reward, terminal_reward
 
 def train(episodes=2000,seed=42,out='runs',eval_games=80):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
@@ -33,10 +34,12 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80):
             who=g.actor
             if who==learner:
                 if pending is not None:
-                    s,a,reward_start=pending
-                    replay.append((s,a,(g.scores()[learner]-reward_start)/25,observe(g),False,mask(g)))
+                    s,a,reward_start,start_potential=pending
+                    base=(g.scores()[learner]-reward_start)/25
+                    reward=shaped_reward(base,start_potential,potential(g,learner),False)
+                    replay.append((s,a,reward,observe(g),False,mask(g)))
                 s=observe(g).copy();a=choose(policy,g,epsilon)
-                pending=(s,encode(a),g.scores()[learner]);g.step(a)
+                pending=(s,encode(a),g.scores()[learner],potential(g,learner));g.step(a)
             else:
                 pick=opponents[who]
                 if pick=='heuristic':a=heuristic(g)
@@ -57,8 +60,9 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80):
                 if updates%500==0:target.load_state_dict(policy.state_dict())
         scores=g.scores()
         if pending is not None:
-            s,a,start=pending
-            final=(scores[learner]-start)/25+(1 if scores[learner]==max(scores) else -1)
+            s,a,start,start_potential=pending
+            final=shaped_reward((scores[learner]-start)/25,start_potential,0.0,True)
+            final+=terminal_reward(scores,learner)
             replay.append((s,a,final,observe(g),True,mask(g)))
         if (ep+1)%max(1,episodes//10)==0 or ep==episodes-1:
             policy.eval();result=evaluate(policy,eval_games,seed=100000)
