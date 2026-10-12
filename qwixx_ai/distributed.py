@@ -133,7 +133,6 @@ class Coordinator:
         self.db.commit()
         self.recent_games.append({'source':source,'scores':scores})
     def _restore_replay(self):
-        # Reconstruct trajectories from server-validated deterministic game logs.
         rows=self.db.execute('SELECT seed,moves FROM games WHERE seed IS NOT NULL AND moves IS NOT NULL ORDER BY id DESC LIMIT 100').fetchall()
         for seed,encoded in reversed(rows):
             try:
@@ -160,7 +159,6 @@ class Coordinator:
     def learn(self):
         with self.lock:
             if len(self.replay)<256:return
-            # Proportional TD-error prioritized experience replay.
             population=list(self.replay)
             weights=np.asarray(self.priorities,dtype=np.float64)**0.6
             probabilities=weights/weights.sum()
@@ -171,7 +169,6 @@ class Coordinator:
             with torch.no_grad():
                 nextq=self.target(torch.from_numpy(np.stack(ns)))
                 nextq[~torch.from_numpy(np.stack(mm))]=-1e9
-                # Double DQN: select with online model, evaluate with target model.
                 online_next=self.model(torch.from_numpy(np.stack(ns)))
                 online_next[~torch.from_numpy(np.stack(mm))]=-1e9
                 best_actions=online_next.argmax(1,keepdim=True)
@@ -186,29 +183,16 @@ class Coordinator:
             self.updates+=1;self.last_loss=round(float(loss.item()),5)
             if self.updates%300==0:self.target.load_state_dict(self.model.state_dict())
     def checkpoint(self):
-        # Hold the training lock while evaluating/saving so model weights remain stable.
         with self.lock:
-            temp=ROOT/'latest.tmp.pt'
-            save(self.model,temp,updates=self.updates,games=self.games)
-            temp.replace(ROOT/'latest.pt')
-            state_tmp=ROOT/'trainer.tmp.pt'
-            torch.save({'optimizer':self.optimizer.state_dict(),'updates':self.updates,'games':self.games,'version':self.version},state_tmp)
-            state_tmp.replace(ROOT/'trainer.pt')
+            temp=ROOT/'latest.tmp.pt';save(self.model,temp,updates=self.updates,games=self.games);temp.replace(ROOT/'latest.pt')
+            state_tmp=ROOT/'trainer.tmp.pt';torch.save({'optimizer':self.optimizer.state_dict(),'updates':self.updates,'games':self.games,'version':self.version},state_tmp);state_tmp.replace(ROOT/'trainer.pt')
             self.version+=1
-            result=evaluate(self.model,192,seed=123450)
-            self.last_eval=result
-            # Promotion requires an improvement on fixed evaluation seeds.
-            # Candidate must outperform champion under identical evaluation seeds.
+            result=evaluate(self.model,192,seed=123450);self.last_eval=result
             champion_eval=evaluate(self.best_model,192,seed=123450) if self.best_model is not None else None
             result['champion_win_share']=champion_eval['win_share'] if champion_eval else None
             if champion_eval is None or result['win_share']>champion_eval['win_share']+0.03:
-                candidate=ROOT/'candidate.pt'
-                save(self.model,candidate,updates=self.updates,games=self.games,win_share=result['win_share'])
-                candidate.replace(ROOT/'best.pt')
-                self.best=result['win_share']
-                self.best_model=copy.deepcopy(self.model).eval()
-                self.league.append(copy.deepcopy(self.best_model))
-                self.promoted_at=time.time()
+                candidate=ROOT/'candidate.pt';save(self.model,candidate,updates=self.updates,games=self.games,win_share=result['win_share']);candidate.replace(ROOT/'best.pt')
+                self.best=result['win_share'];self.best_model=copy.deepcopy(self.model).eval();self.league.append(copy.deepcopy(self.best_model));self.promoted_at=time.time()
             with self.log.open('a') as f:f.write(json.dumps({'time':time.time(),**self.stats()})+'\n')
     def new_session(self,difficulty='champion',player_id=None):
         with self.lock:
@@ -216,11 +200,7 @@ class Coordinator:
                 if time.time()-updated>86400:self.sessions.pop(key,None)
             if len(self.sessions)>=200:raise ValueError('Too many game sessions')
             if player_id is not None:self.player_stats.profile(player_id)
-            sid=uuid.uuid4().hex
-            model=self.best_model
-            session=Session(model=model,difficulty=difficulty)
-            session.advance()
-            self.sessions[sid]=(session,time.time(),player_id)
+            sid=uuid.uuid4().hex;session=Session(model=self.best_model,difficulty=difficulty);session.advance();self.sessions[sid]=(session,time.time(),player_id)
             return {'session_id':sid,**session.view()}
     def session_action(self,sid,action,expected_turn=None,expected_phase=None):
         with self.lock:
@@ -228,62 +208,78 @@ class Coordinator:
             if not entry:raise ValueError('Session expired; start a new game')
             session,_,player_id=entry
             with session.lock:
-                if expected_turn is not None and (type(expected_turn) is not int or expected_turn!=session.game.turn):
-                    raise ValueError('Game state changed; start a new game or reload')
-                if expected_phase is not None and (type(expected_phase) is not int or expected_phase!=session.game.phase):
-                    raise ValueError('Step already advanced; reload game')
-                session.apply_action(action,'human')
-                session.advance()
-                view=session.view()
-                if session.game.done and player_id is not None:
-                    self.player_stats.record(sid,player_id,session.difficulty,session.game)
+                if expected_turn is not None and (type(expected_turn) is not int or expected_turn!=session.game.turn):raise ValueError('Game state changed; start a new game or reload')
+                if expected_phase is not None and (type(expected_phase) is not int or expected_phase!=session.game.phase):raise ValueError('Step already advanced; reload game')
+                session.apply_action(action,'human');session.advance();view=session.view()
+                if session.game.done and player_id is not None:self.player_stats.record(sid,player_id,session.difficulty,session.game)
             self.sessions[sid]=(session,time.time(),player_id)
             return {'session_id':sid,**view}
     def policy_export(self):
-        # Export the promoted model for local JS inference in browser workers.
         with self.lock:
-            model=self.best_model or self.model
-            layers=[]
+            model=self.best_model or self.model;layers=[]
             for layer in model:
-                if isinstance(layer,nn.Linear):
-                    layers.append({'w':layer.weight.detach().tolist(),'b':layer.bias.detach().tolist()})
+                if isinstance(layer,nn.Linear):layers.append({'w':layer.weight.detach().tolist(),'b':layer.bias.detach().tolist()})
             return {'version':self.version,'layers':layers,'observation_size':self.obs_size}
     def stats(self):
         return {'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run_rollouts(self):
         while not self.stop.is_set():
-            if self.paused.is_set():
-                self.stop.wait(.1);continue
+            if self.paused.is_set():self.stop.wait(.1);continue
             try:self.central_rollout()
-            except Exception as exc:
-                print('Rollout error:',repr(exc),flush=True);self.stop.wait(2)
+            except Exception as exc:print('Rollout error:',repr(exc),flush=True);self.stop.wait(2)
     def run(self):
         last=time.monotonic()
         while not self.stop.is_set():
-            if self.paused.is_set():
-                self.stop.wait(.1);continue
+            if self.paused.is_set():self.stop.wait(.1);continue
             try:
                 for _ in range(3):self.learn()
-                if time.monotonic()-last>60:
-                    self.checkpoint();last=time.monotonic()
+                if time.monotonic()-last>60:self.checkpoint();last=time.monotonic()
                 self.stop.wait(.05)
-            except Exception as exc:
-                print('Coordinator error:',repr(exc),flush=True);self.stop.wait(2)
+            except Exception as exc:print('Coordinator error:',repr(exc),flush=True);self.stop.wait(2)
 
 WORKER_JS=r'''
 let enabled=false,completed=0,busy=false,policy=null;
 const inWorker=typeof document==='undefined';
 const order=[Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>12-i),Array.from({length:11},(_,i)=>12-i)];
-async function refreshPolicy(){const r=await fetch('/api/policy');if(!r.ok)throw Error('policy');policy=await r.json()}
-function dot(w,x,b){let y=b;for(let i=0;i<x.length;i++)y+=w[i]*x[i];return y}
-function infer(obs){let x=obs;for(let l=0;l<policy.layers.length;l++){const p=policy.layers[l],y=p.w.map((w,i)=>dot(w,x,p.b[i]));x=l<policy.layers.length-1?y.map(v=>Math.max(0,v)):y}return x}
-function legal(board,c,n,locks){const row=board.rows[c];if(locks.includes(c))return false;const idx=order[c].indexOf(n);if(idx<0||row.includes(n))return false;if(row.some(x=>order[c].indexOf(x)>=idx))return false;if(idx===10&&row.length<5)return false;return true}
-function maskState(s){const out=Array(89).fill(false);out[88]=true;const sums=s.phase===s.boards.length?s.dice.slice(0,2).flatMap(w=>s.dice.slice(2).map((c,i)=>[i,w+c])):[[null,s.dice[0]+s.dice[1]]];for(const [c,n] of sums){for(let color=0;color<4;color++){if(c!==null&&c!==color)continue;if(legal(s.boards[s.active],color,n,s.locks))out[color*22+(n-2)]=true}}return out}
-function encodeState(s){const out=[];for(const b of s.boards){for(let c=0;c<4;c++){for(const n of order[c])out.push(b.rows[c].includes(n)?1:0)}out.push(b.penalties/4)}for(const d of s.dice)out.push(d/6);out.push(s.active/4,s.phase/5,s.turn/100);return out}
-async function play(){if(busy||!enabled)return;busy=true;try{if(!policy)await refreshPolicy();const j=await (await fetch('/api/job')).json();let s={boards:Array.from({length:4},()=>({rows:[[],[],[],[]],penalties:0})),locks:[],active:0,phase:0,turn:0,dice:j.rolls[0]},moves=[];for(let step=0;step<j.max_moves;step++){const m=maskState(s),q=infer(encodeState(s));let a=88,b=-Infinity;for(let i=0;i<89;i++)if(m[i]&&q[i]>b){b=q[i];a=i}moves.push(a);const rr=await (await fetch('/api/sim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:s,action:a,rolls:j.rolls})})).json();s=rr.state;if(rr.done)break}const r=await fetch('/api/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:j.ticket,moves})});if(r.ok)completed++;else console.warn('result rejected',await r.text())}catch(e){console.warn('worker error',e);await new Promise(r=>setTimeout(r,2000))}finally{busy=false;if(enabled)setTimeout(play,0)}}
-function start(){enabled=true;play()}function stop(){enabled=false}
-if(inWorker)self.onmessage=e=>{if(e.data==='start')start();if(e.data==='stop')stop();if(e.data==='count')postMessage(completed)};
+async function refreshPolicy(){const r=await fetch('/api/policy');if(!r.ok)throw Error('Policy unavailable');policy=await r.json();}
+function inference(input){let v=input;for(let li=0;li<policy.layers.length;li++){const l=policy.layers[li],out=l.b.map((bias,i)=>{let z=bias,w=l.w[i];for(let j=0;j<v.length;j++)z+=w[j]*v[j];return li===policy.layers.length-1?z:Math.max(0,z)});v=out;}return v;}
+async function runGame(){
+ if(!policy||completed%20===0)await refreshPolicy();
+ const job=await (await fetch('/api/job')).json();
+ let rows=Array.from({length:4},()=>Array.from({length:4},()=>[])),pen=[0,0,0,0],locks=new Set(),whiteLocks=new Set(),active=0,phase=0,marks=0,turn=0,actions=[];
+ const rolls=job.rolls;let dice=rolls[0];
+ function actor(){return phase===0||phase===4?active:(active+phase)%4}
+ function legal(){let who=actor(),candidate=[];if(phase===4){for(let c=0;c<4;c++)for(let w=0;w<2;w++)candidate.push([c,dice[w]+dice[c+2]])}else for(let c=0;c<4;c++)candidate.push([c,dice[0]+dice[1]]);let out=[];for(const [c,n] of candidate){if(locks.has(c)&&!(phase<4&&whiteLocks.has(c)))continue;let idx=order[c].indexOf(n),row=rows[who][c];if(idx<0||row.length&&idx<=order[c].indexOf(row[row.length-1]))continue;if(idx===10){if(row.length>=5)out.push([c,n,true]);}else out.push([c,n,false]);}return out;}
+ function encode(a){if(a===null)return 0;return 1+22*a[0]+2*order[a[0]].indexOf(a[1])+(a[2]?1:0)}
+ function observe(){let v=[];for(let b=0;b<4;b++){for(let c=0;c<4;c++)for(let n of order[c])v.push(rows[b][c].includes(n)?1:0);v.push(pen[b]/4)}for(let c=0;c<4;c++)v.push(locks.has(c)?1:0);for(let x of dice)v.push(x/6);v.push(active/4,actor()/4,phase/5,Math.min(turn/100,1),marks/2);return v;}
+ for(let t=0;t<1000;t++){if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;const options=[null,...legal()];let a;if(Math.random()<.18)a=options[Math.floor(Math.random()*options.length)];else{const q=inference(observe());a=options.reduce((best,x)=>q[encode(x)]>q[encode(best)]?x:best,null);}actions.push(encode(a));let who=actor();if(a){rows[who][a[0]].push(a[1]);if(a[2]){locks.add(a[0]);if(phase<4)whiteLocks.add(a[0]);}if(who===active)marks++;}if(phase===4&&marks===0)pen[active]++;if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;if(phase<4){phase++;if(phase===4)whiteLocks.clear();}else{turn++;active=(active+1)%4;phase=0;marks=0;whiteLocks.clear();dice=rolls[turn];if(!dice)throw Error('Dice stream exhausted')}}
+ const r=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:job.ticket,moves:actions})});if(!r.ok)throw Error((await r.json()).error||'Upload failed');completed++;
+}
+async function loop(){if(!enabled||busy)return;busy=true;try{await runGame();if(inWorker)postMessage({type:'progress',completed,version:policy.version});else document.getElementById('workerStatus').textContent=`Contributed ${completed} verified games · policy ${policy.version}`;}catch(e){if(inWorker)postMessage({type:'error',message:e.message});else document.getElementById('workerStatus').textContent='Worker error: '+e.message;}finally{busy=false;if(enabled)setTimeout(loop,1000)}}
+function toggleWorker(){enabled=!enabled;if(!inWorker)document.getElementById('workerToggle').textContent=enabled?'Stop browser training':'Start browser training';if(enabled)loop()}
+if(inWorker)onmessage=e=>{if(e.data==='start'&&!enabled)toggleWorker();if(e.data==='stop'&&enabled)toggleWorker()};
+async function stats(){try{const x=await(await fetch('/api/stats')).json();document.getElementById('trainingStats').textContent=`Central games: ${x.central_games} | Browser games: ${x.browser_games} | Updates: ${x.updates} | Replay: ${x.replay_size} | Best win share: ${(100*x.best_win_share).toFixed(1)}% | Sessions: ${x.sessions}`;if(policy&&x.model_version!==policy.version)await refreshPolicy();}catch(e){}}
+if(!inWorker){setInterval(stats,5000);stats();}
 '''
+
+def rolls_for(seed):
+    g=Game(seed=seed)
+    return [g.dice]+[tuple(g.rng.randint(1,6) for _ in range(6)) for _ in range(999)]
+
+DASHBOARD_HTML=GAME_HTML.replace('</body>', '''
+<hr id="training-dashboard"><h2>Distributed training</h2>
+<p id="trainingStats">Loading training status…</p>
+<button id="workerToggle" onclick="toggleBrowserWorkers()">Start browser training</button>
+<p id="workerStatus" class="hint">Browser worker idle. Up to two worker threads will contribute verified games without blocking the game UI.</p>
+<canvas id="trainingChart" width="860" height="180" style="background:#0b1220;border-radius:8px;max-width:100%"></canvas>
+<h3>Recent training games</h3><div id="trainingHistory" class="hint">Loading…</div>
+<script src="/worker.js"></script><script>
+let browserWorkers=[];
+function toggleBrowserWorkers(){if(browserWorkers.length){for(const w of browserWorkers)w.postMessage('stop');browserWorkers=[];document.getElementById('workerToggle').textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser workers stopped.';return}let count=Math.min(2,navigator.hardwareConcurrency||1);for(let i=0;i<count;i++){let w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress')document.getElementById('workerStatus').textContent=`Browser workers active · latest worker completed ${e.data.completed} · policy ${e.data.version}`;if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');browserWorkers.push(w)}document.getElementById('workerToggle').textContent='Stop browser training';}
+let metricPoints=[];
+async function drawDashboard(){try{const x=await(await fetch('/api/stats')).json();metricPoints.push(x);metricPoints=metricPoints.slice(-60);document.getElementById('trainingStats').textContent=`Games ${x.games} · central ${x.central_games} · browser ${x.browser_games} · updates ${x.updates} · replay ${x.replay_size} · loss ${x.loss??'—'} · best ${(100*x.best_win_share).toFixed(1)}% · sessions ${x.sessions} · DB ${x.database_games}`;const c=document.getElementById('trainingChart'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#60a5fa';ctx.beginPath();metricPoints.forEach((p,i)=>{let xx=i*Math.max(1,c.width/59),yy=c.height-20-Math.min(140,(p.updates/(metricPoints[metricPoints.length-1].updates||1))*140);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.stroke();const h=await(await fetch('/api/history?limit=12')).json();document.getElementById('trainingHistory').textContent=h.games.map(g=>`${g.source}: ${g.scores.join('/')}`).join(' · ')||'No persisted games yet.';}catch(e){document.getElementById('trainingStats').textContent='Training status unavailable: '+e.message}}
+setInterval(drawDashboard,5000);drawDashboard();
+</script></body>''')
 
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
@@ -298,16 +294,14 @@ class Handler(BaseHTTPRequestHandler):
         return limited
     def reply(self,obj,status=200,ctype='application/json'):
         b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
-    def authorized_worker(self):
-        return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token',''),WORKER_TOKEN)
+    def authorized_worker(self):return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token',''),WORKER_TOKEN)
     def auth_token(self):
         from http.cookies import SimpleCookie
         cookie=SimpleCookie()
         try:cookie.load(self.headers.get('Cookie',''))
         except Exception:return ''
         return cookie['qwixx_auth'].value if 'qwixx_auth' in cookie else ''
-    def player_id(self):
-        return self.coord.player_stats.authenticate(self.auth_token())
+    def player_id(self):return self.coord.player_stats.authenticate(self.auth_token())
     def do_GET(self):
         try:
             if self.path=='/':return self.reply(DASHBOARD_HTML,ctype='text/html; charset=utf-8')
@@ -319,12 +313,10 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:limit=100
                 return self.reply({'games':self.coord.history(limit)})
             if self.path=='/api/auth/me':
-                pid=self.player_id()
-                return self.reply({'player':self.coord.player_stats.profile(pid) if pid else None})
+                pid=self.player_id();return self.reply({'player':self.coord.player_stats.profile(pid) if pid else None})
             if self.path.startswith('/api/player-stats?'):
                 from urllib.parse import parse_qs, urlsplit
-                query=parse_qs(urlsplit(self.path).query)
-                pid=self.player_id()
+                query=parse_qs(urlsplit(self.path).query);pid=self.player_id()
                 if not pid:return self.reply({'error':'Sign in required'},401)
                 return self.reply(self.coord.player_stats.stats(pid,query.get('difficulty',[None])[0]))
             if self.path=='/api/policy':return self.reply(self.coord.policy_export())
@@ -348,10 +340,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif command=='rollback':
                     with self.coord.lock:
                         if self.coord.best_model is None:raise ValueError('No champion checkpoint')
-                        self.coord.model.load_state_dict(self.coord.best_model.state_dict())
-                        self.coord.target.load_state_dict(self.coord.best_model.state_dict())
-                        self.coord.optimizer=torch.optim.Adam(self.coord.model.parameters(),lr=3e-4)
-                        self.coord.checkpoint()
+                        self.coord.model.load_state_dict(self.coord.best_model.state_dict());self.coord.target.load_state_dict(self.coord.best_model.state_dict());self.coord.optimizer=torch.optim.Adam(self.coord.model.parameters(),lr=3e-4);self.coord.checkpoint()
                 else:raise ValueError('Unknown command')
                 return self.reply({'ok':True,'paused':self.coord.paused.is_set()})
             except (ValueError,TypeError) as exc:return self.reply({'error':str(exc)},400)
@@ -363,13 +352,10 @@ class Handler(BaseHTTPRequestHandler):
                 data=json.loads(self.rfile.read(n) or b'{}')
                 if self.path=='/api/auth/request':return self.reply(self.coord.player_stats.request_code(data.get('email'),data.get('name')))
                 if self.path=='/api/auth/logout':
-                    self.coord.player_stats.logout(self.auth_token())
-                    self.send_response(200);self.send_header('Set-Cookie','qwixx_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'{}');return
-                result=self.coord.player_stats.verify_code(data.get('email'),data.get('code'))
-                cookie='qwixx_auth='+result['token']+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000'
+                    self.coord.player_stats.logout(self.auth_token());self.send_response(200);self.send_header('Set-Cookie','qwixx_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'{}');return
+                result=self.coord.player_stats.verify_code(data.get('email'),data.get('code'));cookie='qwixx_auth='+result['token']+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000'
                 if self.headers.get('X-Forwarded-Proto','').lower()=='https' or os.getenv('QWIXX_COOKIE_SECURE','false').lower()=='true':cookie+='; Secure'
-                body=json.dumps({'player':result['player']}).encode()
-                self.send_response(200);self.send_header('Set-Cookie',cookie);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
+                body=json.dumps({'player':result['player']}).encode();self.send_response(200);self.send_header('Set-Cookie',cookie);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             except (ValueError,TypeError,RuntimeError) as e:return self.reply({'error':str(e)},400 if isinstance(e,ValueError) else 503)
             except (smtplib.SMTPException,OSError):
                 logging.exception('Email verification SMTP delivery failed')
@@ -379,47 +365,38 @@ class Handler(BaseHTTPRequestHandler):
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
                 if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'),self.player_id())
                 else:
-                    a=data.get('action');a=None if a is None else tuple(a)
-                    result=self.coord.session_action(data.get('session_id'),a,data.get('expected_turn'),data.get('expected_phase'))
+                    a=data.get('action');a=None if a is None else tuple(a);sid=data.get('session_id','');entry=self.coord.sessions.get(sid)
+                    if entry and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
+                    result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
                 return self.reply(result)
-            except (ValueError,TypeError) as e:return self.reply({'error':str(e)},400)
-        if self.path=='/api/result':
-            if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
-            if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
-            try:
-                n=int(self.headers.get('Content-Length','0'))
-                if n<2 or n>MAX_BODY:raise ValueError('Invalid body')
-                return self.reply(self.coord.accept(json.loads(self.rfile.read(n))))
-            except (ValueError,TypeError,json.JSONDecodeError) as e:return self.reply({'error':str(e)},400)
-        if self.path=='/api/sim':
-            if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
-            if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
-            try:
-                n=int(self.headers.get('Content-Length','0'))
-                if n<2 or n>MAX_BODY:raise ValueError('Invalid body')
-                data=json.loads(self.rfile.read(n));s=data['state'];a=data['action'];rolls=data['rolls']
-                g=Game(seed=0);g.active=s['active'];g.phase=s['phase'];g.turn=s['turn'];g.dice=tuple(s['dice']);g.locks=set(s['locks'])
-                for i,b in enumerate(s['boards']):g.boards[i].rows=[list(r) for r in b['rows']];g.boards[i].penalties=b['penalties']
-                if not mask(g)[a]:raise ValueError('Illegal move')
-                g.step(decode(a))
-                if not g.done and g.phase==0:g.dice=tuple(rolls[g.turn])
-                return self.reply({'state':{'boards':[{'rows':b.rows,'penalties':b.penalties} for b in g.boards],'locks':list(g.locks),'active':g.active,'phase':g.phase,'turn':g.turn,'dice':g.dice},'done':g.done})
-            except (ValueError,TypeError,KeyError,IndexError,json.JSONDecodeError) as e:return self.reply({'error':str(e)},400)
-        self.send_error(404)
-
-def rolls_for(seed):
-    r=random.Random(seed);return [[r.randint(1,6) for _ in range(6)] for _ in range(1000)]
+            except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
+        if self.path!='/api/submit':self.send_error(404);return
+        if self.limited():return self.reply({'error':'Rate limit exceeded'},429)
+        if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
+        try:
+            n=int(self.headers.get('Content-Length','0'))
+            if n<1 or n>MAX_BODY:raise ValueError('Invalid body size')
+            data=json.loads(self.rfile.read(n));result=self.coord.accept(data);self.reply(result)
+        except (ValueError,json.JSONDecodeError) as e:self.reply({'error':str(e)},400)
+    def log_message(self,fmt,*args):
+        if os.getenv('QWIXX_HTTP_LOG'):super().log_message(fmt,*args)
 
 def main():
     import argparse
     p=argparse.ArgumentParser();p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=8765);a=p.parse_args()
+    torch.set_num_threads(max(1,int(os.getenv('QWIXX_TORCH_THREADS','2'))))
     c=Coordinator();Handler.coord=c
-    threading.Thread(target=c.run,daemon=True).start()
-    for _ in range(max(0,int(os.getenv('QWIXX_CENTRAL_WORKERS','0')))):threading.Thread(target=c.run_rollouts,daemon=True).start()
+    trainer=threading.Thread(target=c.run,daemon=True,name='central-trainer');trainer.start()
+    worker_count=max(1,min(4,int(os.getenv('QWIXX_CENTRAL_WORKERS','2'))))
+    workers=[threading.Thread(target=c.run_rollouts,daemon=True,name=f'rollout-{i}') for i in range(worker_count)]
+    for worker in workers:worker.start()
     server=ThreadingHTTPServer((a.host,a.port),Handler)
     print(f'Qwixx distributed server: http://{a.host}:{a.port} | persistent data: {ROOT}',flush=True)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
-    finally:c.stop.set();server.server_close();c.checkpoint()
-
+    finally:
+        c.stop.set();server.server_close()
+        for worker in workers:worker.join(timeout=10)
+        trainer.join(timeout=10)
+        c.checkpoint();c.db.close()
 if __name__=='__main__':main()
