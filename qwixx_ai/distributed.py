@@ -1,5 +1,5 @@
 """Centralized training coordinator with browser-generated, server-verified games."""
-import json, os, random, secrets, threading, time, copy, uuid, sqlite3
+import json, os, random, secrets, threading, time, copy, uuid, sqlite3, smtplib, logging
 from collections import deque
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -430,6 +430,9 @@ class Handler(BaseHTTPRequestHandler):
                 body=json.dumps({'player':result['player']}).encode()
                 self.send_response(200);self.send_header('Set-Cookie',cookie);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             except (ValueError,TypeError,RuntimeError) as e:return self.reply({'error':str(e)},400 if isinstance(e,ValueError) else 503)
+            except (smtplib.SMTPException,OSError) as e:
+                logging.exception('Email verification SMTP delivery failed')
+                return self.reply({'error':'Email delivery failed. Check Gmail app password and SMTP connectivity.'},503)
         if self.path in ('/reset','/move'):
             try:
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
