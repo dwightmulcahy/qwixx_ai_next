@@ -2,5 +2,6 @@
 
 def terminal_reward(scores, seat):
     """Fractional win credit for ties; -1 for non-winning seats."""
-    winners=sum(score==max(scores) for score in scores)
-    return 1.0/winners if scores[seat]==max(scores) else -1.0
+    top=max(scores)
+    winners=sum(score==top for score in scores)
+    return 1.0/winners if scores[seat]==top else -1.0
