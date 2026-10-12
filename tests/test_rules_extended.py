@@ -51,7 +51,6 @@ def test_random_legal_play_preserves_monotonic_rows_and_penalty_bounds(seed):
     for _ in range(1000):
         if game.done:
             break
-        actor = game.actor
         phase = game.phase
         active = game.active
         before = game.boards[active].penalties
