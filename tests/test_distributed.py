@@ -205,3 +205,28 @@ def test_admin_endpoint_requires_token(tmp_path,monkeypatch):
         with request('test-secret','resume') as response:assert not json.load(response)['paused']
     finally:
         server.shutdown();server.server_close();thread.join(timeout=5);coord.db.close()
+
+
+def test_legacy_checkpoint_starts_fresh_without_deleting_files(tmp_path, monkeypatch):
+    import torch
+    from qwixx_ai import distributed
+    from qwixx_ai.model import network
+    monkeypatch.setattr(distributed, 'ROOT', tmp_path)
+    old = network(195)
+    torch.save({'model': old.state_dict(), 'obs_size': 195}, tmp_path / 'latest.pt')
+    torch.save({'model': old.state_dict(), 'obs_size': 195, 'win_share': 0.8}, tmp_path / 'best.pt')
+    coordinator = distributed.Coordinator()
+    assert coordinator.model[0].in_features == coordinator.obs_size
+    assert coordinator.target[0].in_features == coordinator.obs_size
+    assert coordinator.best_model is None
+    assert (tmp_path / 'latest.pt').exists()
+    assert (tmp_path / 'best.pt').exists()
+    coordinator.db.close()
+
+
+def test_browser_worker_observation_matches_python_dimensions():
+    from qwixx_ai import distributed
+    from qwixx_ai.core import Game
+    from qwixx_ai.env import observe
+    assert len(observe(Game())) == 263
+    assert 'remaining/11' in distributed.WORKER_JS
