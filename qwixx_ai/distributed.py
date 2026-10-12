@@ -222,13 +222,17 @@ class Coordinator:
             session.advance()
             self.sessions[sid]=(session,time.time(),player_id)
             return {'session_id':sid,**session.view()}
-    def session_action(self,sid,action):
+    def session_action(self,sid,action,expected_turn=None,expected_phase=None):
         with self.lock:
             entry=self.sessions.get(sid)
             if not entry:raise ValueError('Session expired; start a new game')
             session,_,player_id=entry
             with session.lock:
-                session.game.step(action)
+                if expected_turn is not None and (type(expected_turn) is not int or expected_turn!=session.game.turn):
+                    raise ValueError('Game state changed; start a new game or reload')
+                if expected_phase is not None and (type(expected_phase) is not int or expected_phase!=session.game.phase):
+                    raise ValueError('Step already advanced; reload game')
+                session.apply_action(action,'human')
                 session.advance()
                 view=session.view()
                 if session.game.done and player_id is not None:
@@ -435,7 +439,7 @@ class Handler(BaseHTTPRequestHandler):
                     sid=data.get('session_id','')
                     entry=self.coord.sessions.get(sid)
                     if entry and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
-                    result=self.coord.session_action(sid,a)
+                    result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
                 return self.reply(result)
             except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
         if self.path!='/api/submit':self.send_error(404);return
