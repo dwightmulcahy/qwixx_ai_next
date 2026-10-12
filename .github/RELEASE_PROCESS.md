@@ -1,33 +1,12 @@
-# GitHub CI and release policy
+# Release process
 
-## Continuous integration
+CI runs on pushes and pull requests to main. Release publication happens only when you manually push an existing version tag (or manually dispatch the release workflow for an existing tag). No workflow creates version tags or chooses version numbers.
 
-The CI workflow runs independently on pushes, pull requests, and manual requests:
+1. Confirm the exact commit on main has a successful CI run.
+2. Configure repository Actions secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Docker Hub access token with write permission).
+3. Create and push your own version tag: `git tag v1.0.0 && git push origin v1.0.0`.
+4. Actions → Release Docker image checks CI, smoke-tests the image, publishes `<DOCKERHUB_USERNAME>/qwixx-ai:v1.0.0` for amd64 and arm64, and creates a GitHub Release with changelog sections grouped from conventional commit subjects.
 
-- Rules across Python 3.10, 3.11, 3.12
-- Training recovery and prioritized replay
-- Browser worker, JavaScript replay, and HTTP/admin integration
-- Full pytest regression suite and bytecode compilation
-- Docker image build and live `/health` smoke test
+The release job uses the `production` environment. If you enable required reviewers, approval is needed before publication. No `latest` tag is published. Existing GitHub Releases are left unchanged on rerun. The first release includes all reachable commits; later releases compare with the previous version tag.
 
-Each test job uploads JUnit XML results, including on failure. The `CI gate` job fails if any job fails. In repository Settings → Branches / Rulesets, require the **CI gate** status check before merging to `main`. Consider requiring review and blocking force pushes.
-
-## Manual release only
-
-There are **no scheduled, push-triggered, or automatic version releases**.
-
-1. Ensure the `CI gate` is green on the commit to release.
-2. Create and push a tag yourself: `git tag v1.0.0 && git push origin v1.0.0`.
-3. Open Actions → **Manual Docker release** → Run workflow.
-4. Enter the **existing** tag. Leave the optional GitHub release checkbox off if you only want the Docker image.
-5. The workflow verifies the tag exists on `main`, builds the image, starts a container, checks `/health`, and publishes `ghcr.io/dwightmulcahy/qwixx_ai_next:<tag>`. It optionally creates a GitHub release if you explicitly check the box.
-
-The workflow never creates or moves Git tags, and never pushes a `latest` image. It publishes only a named tag.
-
-## Repository configuration
-
-Ensure Actions has permission to write packages. The manual release uses the `production` environment; configure required reviewers there if you want approval before publication. GitHub Packages visibility may need to be adjusted for QNAP pulls. Container deployment still needs persistent `runs` storage.
-
-## Limitations
-
-GitHub Actions is the authoritative validation environment; a green run must be checked before release. Tag ancestry alone does not prove the tag's commit passed CI, so review the CI result for the exact tag commit before manually running the release.
+Dependabot checks GitHub Actions and Python dependencies weekly and groups updates into pull requests. CI validates those PRs before merging.
