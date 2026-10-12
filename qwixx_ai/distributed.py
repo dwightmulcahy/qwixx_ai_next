@@ -44,11 +44,14 @@ class Coordinator:
         self.model=network(self.obs_size);self.target=network(self.obs_size)
         checkpoint=ROOT/'latest.pt'
         if checkpoint.exists():
-            try:loaded=load(checkpoint)
+            try:
+                loaded=load(checkpoint)
                 if loaded[0].in_features != self.obs_size:
                     print('Legacy checkpoint has incompatible observations; starting a new model',flush=True)
-                else:self.model=loaded
-            except Exception as exc:print('Checkpoint load failed:',exc,flush=True)
+                else:
+                    self.model=loaded
+            except Exception as exc:
+                print('Checkpoint load failed:',exc,flush=True)
         self.target.load_state_dict(self.model.state_dict())
         best_path=ROOT/'best.pt'
         if best_path.exists():
