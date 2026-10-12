@@ -13,7 +13,7 @@ from .tournament import evaluate
 from .learning import potential, shaped_reward, terminal_reward
 from .league import freeze, promote
 
-def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000):
+def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
     folder=Path(out);folder.mkdir(parents=True,exist_ok=True)
     obs_size=observe(Game()).size;policy=network(obs_size);target=network(obs_size)
@@ -26,16 +26,27 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         if champion[0].in_features != obs_size:
             raise ValueError('Champion checkpoint has incompatible observations')
         snapshots.append(champion)
+        if warm_start:
+            policy.load_state_dict(champion.state_dict())
+            target.load_state_dict(policy.state_dict())
+    elif warm_start:
+        raise ValueError('--warm-start requires --champion')
     for ep in range(episodes):
-        g=Game(seed=seed+ep);epsilon=max(.05,1-.95*ep/max(1,episodes*.95))
+        g=Game(seed=seed+ep)
+        epsilon=(max(.05,.20-.15*ep/max(1,episodes*.9)) if warm_start
+                 else max(.05,1-.95*ep/max(1,episodes*.95)))
         # One learner seat, rotated; opponents from current policy, frozen snapshots or baselines.
         learner=ep%4;opponents=[]
         for seat in range(4):
             if seat==learner:opponents.append(None)
             else:
-                candidates=(['current','heuristic','random'] if champion is None
-                            else ['current','heuristic'] + [0]*5)
-                candidates+=list(range(1 if champion is not None else 0,len(snapshots)))
+                if champion is None:
+                    candidates=['current','heuristic','random']+list(range(len(snapshots)))
+                else:
+                    progress=ep/max(1,episodes-1)
+                    champion_weight=2+int(4*progress)
+                    candidates=['current','heuristic','random']+[0]*champion_weight
+                    candidates+=list(range(1,len(snapshots)))*2
                 pick=random.choice(candidates)
                 opponents.append(pick)
         pending=None
@@ -120,6 +131,7 @@ def main():
     p.add_argument('--target-interval',type=int,default=1000)
     p.add_argument('--champion',default=None,help='Existing champion checkpoint for league training')
     p.add_argument('--promotion-games',type=int,default=1000)
+    p.add_argument('--warm-start',action='store_true',help='Initialize policy and target from champion')
     a=p.parse_args();train(a.episodes,a.seed,a.out,a.eval_games,a.target_interval,
-                           a.champion,a.promotion_games)
+                           a.champion,a.promotion_games,a.warm_start)
 if __name__=='__main__':main()
