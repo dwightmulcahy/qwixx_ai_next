@@ -4,9 +4,7 @@ import random
 from pathlib import Path
 
 import numpy as np
-import torch
-
-from .core import Game
+from .core import Game, ORDER
 from .model import choose, load, save
 
 
@@ -42,7 +40,7 @@ def head_to_head(challenger, champion, games=1000, seed=700000):
             locks += sum(bool(game.boards[seat].rows[c] and
                               len(game.boards[seat].rows[c]) >= 6 and
                               game.boards[seat].rows[c][-1] ==
-                              __import__('qwixx_ai.core', fromlist=['ORDER']).ORDER[c][-1])
+                              ORDER[c][-1])
                          for c in range(4))
     finally:
         random.setstate(rng_state)
