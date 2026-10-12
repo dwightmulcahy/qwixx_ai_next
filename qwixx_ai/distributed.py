@@ -13,6 +13,7 @@ from .agents import heuristic,random_agent
 from .tournament import evaluate
 from .web import HTML as GAME_HTML, Session
 from .player_stats import PlayerStats
+from .learning import potential, shaped_reward, terminal_reward
 
 ROOT=Path(os.getenv('QWIXX_DATA', Path.cwd()/'runs'))
 ROOT.mkdir(parents=True,exist_ok=True)
@@ -43,13 +44,19 @@ class Coordinator:
         self.model=network(self.obs_size);self.target=network(self.obs_size)
         checkpoint=ROOT/'latest.pt'
         if checkpoint.exists():
-            try:self.model=load(checkpoint)
+            try:loaded=load(checkpoint)
+                if loaded[0].in_features != self.obs_size:
+                    print('Legacy checkpoint has incompatible observations; starting a new model',flush=True)
+                else:self.model=loaded
             except Exception as exc:print('Checkpoint load failed:',exc,flush=True)
         self.target.load_state_dict(self.model.state_dict())
         best_path=ROOT/'best.pt'
         if best_path.exists():
             try:
-                self.best_model=load(best_path)
+                candidate=load(best_path)
+                if candidate[0].in_features != self.obs_size:
+                    raise ValueError('Legacy champion observation size')
+                self.best_model=candidate
                 self.best=float(torch.load(best_path,map_location='cpu',weights_only=True).get('win_share',-1))
             except Exception as exc:print('Best checkpoint load failed:',exc,flush=True)
         self.optimizer=torch.optim.Adam(self.model.parameters(),lr=3e-4)
@@ -57,6 +64,10 @@ class Coordinator:
         if state_path.exists():
             try:
                 state=torch.load(state_path,map_location='cpu',weights_only=True)
+                if self.model[0].in_features != self.obs_size:
+                    raise ValueError('Incompatible current model')
+                if checkpoint.exists() and load(checkpoint)[0].in_features != self.obs_size:
+                    raise ValueError('Legacy optimizer state; starting fresh')
                 self.optimizer.load_state_dict(state['optimizer'])
                 self.updates=state.get('updates',0)
                 self.games=state.get('games',0)
@@ -88,16 +99,17 @@ class Coordinator:
                 if not mask(game)[code]:raise ValueError('Illegal move')
                 who=game.actor
                 if last[who] is not None:
-                    s,a,start=last[who]
-                    transitions.append((s,a,(game.scores()[who]-start)/25,observe(game),False,mask(game)))
-                last[who]=(observe(game).copy(),code,game.scores()[who]);game.step(decode(code))
+                    s,a,start,p0=last[who]
+                    reward=shaped_reward((game.scores()[who]-start)/25,p0,potential(game,who),False)
+                    transitions.append((s,a,reward,observe(game),False,mask(game)))
+                last[who]=(observe(game).copy(),code,game.scores()[who],potential(game,who));game.step(decode(code))
             if not game.done:raise ValueError('Incomplete game')
         except Exception as exc:raise ValueError(str(exc)) from exc
         scores=game.scores()
         for who,item in enumerate(last):
             if item is not None:
-                s,a,start=item
-                reward=(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1)
+                s,a,start,p0=item
+                reward=shaped_reward((scores[who]-start)/25,p0,0,True)+terminal_reward(scores,who)
                 transitions.append((s,a,reward,observe(game),True,mask(game)))
         with self.lock:
             self._add_transitions(transitions);self.games+=1;self.browser_games+=1
@@ -109,17 +121,19 @@ class Coordinator:
         while not g.done:
             who=g.actor
             if last[who] is not None:
-                s,a,start=last[who]
-                transitions.append((s,a,(g.scores()[who]-start)/25,observe(g),False,mask(g)))
+                s,a,start,p0=last[who]
+                reward=shaped_reward((g.scores()[who]-start)/25,p0,potential(g,who),False)
+                transitions.append((s,a,reward,observe(g),False,mask(g)))
             with self.lock:
                 policy=self.rng.choice(list(self.league)) if self.league and self.rng.random()<.15 else (self.best_model if self.best_model is not None and self.rng.random()<.35 else self.model)
                 a=choose(policy,g,epsilon=self.exploration()) if self.rng.random()<.65 else (heuristic(g) if self.rng.random()<.8 else random_agent(g))
-            last[who]=(observe(g).copy(),encode(a),g.scores()[who]);moves.append(encode(a));g.step(a)
+            last[who]=(observe(g).copy(),encode(a),g.scores()[who],potential(g,who));moves.append(encode(a));g.step(a)
         scores=g.scores()
         for who,item in enumerate(last):
             if item is not None:
-                s,a,start=item
-                transitions.append((s,a,(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1),observe(g),True,mask(g)))
+                s,a,start,p0=item
+                reward=shaped_reward((scores[who]-start)/25,p0,0,True)+terminal_reward(scores,who)
+                transitions.append((s,a,reward,observe(g),True,mask(g)))
         with self.lock:
             self._add_transitions(transitions);self.games+=1;self.central_games+=1
             self._record('central',scores,moves,seed)
@@ -141,15 +155,17 @@ class Coordinator:
                     if g.done or not mask(g)[code]:raise ValueError('Incompatible game log')
                     who=g.actor
                     if last[who] is not None:
-                        state,action,start=last[who]
-                        transitions.append((state,action,(g.scores()[who]-start)/25,observe(g),False,mask(g)))
-                    last[who]=(observe(g).copy(),code,g.scores()[who]);g.step(decode(code))
+                        state,action,start,p0=last[who]
+                        reward=shaped_reward((g.scores()[who]-start)/25,p0,potential(g,who),False)
+                        transitions.append((state,action,reward,observe(g),False,mask(g)))
+                    last[who]=(observe(g).copy(),code,g.scores()[who],potential(g,who));g.step(decode(code))
                 if not g.done:continue
                 scores=g.scores()
                 for who,item in enumerate(last):
                     if item is not None:
-                        state,action,start=item
-                        transitions.append((state,action,(scores[who]-start)/25+(1 if scores[who]==max(scores) else -1),observe(g),True,mask(g)))
+                        state,action,start,p0=item
+                        reward=shaped_reward((scores[who]-start)/25,p0,0,True)+terminal_reward(scores,who)
+                        transitions.append((state,action,reward,observe(g),True,mask(g)))
                 self._add_transitions(transitions)
             except (ValueError,TypeError,IndexError):continue
     def history(self,limit=100):
@@ -251,7 +267,7 @@ async function runGame(){
  function actor(){return phase===0||phase===4?active:(active+phase)%4}
  function legal(){let who=actor(),candidate=[];if(phase===4){for(let c=0;c<4;c++)for(let w=0;w<2;w++)candidate.push([c,dice[w]+dice[c+2]])}else for(let c=0;c<4;c++)candidate.push([c,dice[0]+dice[1]]);let out=[];for(const [c,n] of candidate){if(locks.has(c)&&!(phase<4&&whiteLocks.has(c)))continue;let idx=order[c].indexOf(n),row=rows[who][c];if(idx<0||row.length&&idx<=order[c].indexOf(row[row.length-1]))continue;if(idx===10){if(row.length>=5)out.push([c,n,true]);}else out.push([c,n,false]);}return out;}
  function encode(a){if(a===null)return 0;return 1+22*a[0]+2*order[a[0]].indexOf(a[1])+(a[2]?1:0)}
- function observe(){let v=[];for(let b=0;b<4;b++){for(let c=0;c<4;c++)for(let n of order[c])v.push(rows[b][c].includes(n)?1:0);v.push(pen[b]/4)}for(let c=0;c<4;c++)v.push(locks.has(c)?1:0);for(let x of dice)v.push(x/6);v.push(active/4,actor()/4,phase/5,Math.min(turn/100,1),marks/2);return v;}
+ function observe(){let v=[];for(let b=0;b<4;b++){for(let c=0;c<4;c++)for(let n of order[c])v.push(rows[b][c].includes(n)?1:0);v.push(pen[b]/4)}for(let b=0;b<4;b++){for(let c=0;c<4;c++){let row=rows[b][c],last=row.length?order[c].indexOf(row[row.length-1]):-1,remaining=locks.has(c)?0:10-last;v.push(row.length/11,remaining/11,Math.min(row.length+1,12)/12,+(row.length>=5&&!locks.has(c)));}v.push(pen[b]/4);}for(let c=0;c<4;c++)v.push(locks.has(c)?1:0);for(let x of dice)v.push(x/6);v.push(active/4,actor()/4,phase/5,Math.min(turn/100,1),marks/2);return v;}
  for(let t=0;t<1000;t++){if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;const options=[null,...legal()];let a;if(Math.random()<.18)a=options[Math.floor(Math.random()*options.length)];else{const q=inference(observe());a=options.reduce((best,x)=>q[encode(x)]>q[encode(best)]?x:best,null);}actions.push(encode(a));let who=actor();if(a){rows[who][a[0]].push(a[1]);if(a[2]){locks.add(a[0]);if(phase<4)whiteLocks.add(a[0]);}if(who===active)marks++;}if(phase===4&&marks===0)pen[active]++;if((locks.size>=2&&!(phase<4&&whiteLocks.size))||pen.some(x=>x>=4))break;if(phase<4){phase++;if(phase===4)whiteLocks.clear();}else{turn++;active=(active+1)%4;phase=0;marks=0;whiteLocks.clear();dice=rolls[turn];if(!dice)throw Error('Dice stream exhausted')}}
  const r=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:job.ticket,moves:actions})});if(!r.ok)throw Error((await r.json()).error||'Upload failed');completed++;
 }
