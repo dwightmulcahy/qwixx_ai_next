@@ -1,14 +1,14 @@
 [build-system]
-requires=['setuptools>=68']
+requires=['setuptools>=84.0.0']
 build-backend='setuptools.build_meta'
 [project]
 name='qwixx-ai'
 version='0.0.0'
 requires-python='>=3.10'
-dependencies=['numpy>=1.24','torch>=2.1']
+dependencies=['numpy>=2.2.6','torch>=2.14.1']
 [project.optional-dependencies]
-gym=['gymnasium>=0.29']
-dev=['pytest>=8','gymnasium>=0.29','ruff>=0.14']
+gym=['gymnasium>=1.4.0']
+dev=['pytest>=9.1.1','gymnasium>=1.4.0','ruff>=0.16.10']
 
 [tool.ruff]
 target-version='py310'
