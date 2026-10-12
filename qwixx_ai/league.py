@@ -54,12 +54,31 @@ def head_to_head(challenger, champion, games=1000, seed=700000):
 
 
 def promote(challenger, champion, destination, games=1000, seed=700000,
-            minimum_share=0.30):
-    result = head_to_head(challenger, champion, games, seed)
-    result["promotion_threshold"] = minimum_share
-    result["promoted"] = result["win_share"] >= minimum_share
+            minimum_share=0.28, batches=3):
+    """Promote only after consistently exceeding the equal-strength baseline.
+
+    All batches must exceed 25% and their pooled share must reach minimum_share.
+    This is a practical gate, not a statistical confidence test.
+    """
+    if batches < 2 or games < batches:
+        raise ValueError("promotion requires at least two nonempty batches")
+    if not 0.25 < minimum_share <= 1:
+        raise ValueError("minimum_share must exceed the four-seat baseline")
+    sizes = [games // batches + (i < games % batches) for i in range(batches)]
+    results = [head_to_head(challenger, champion, size, seed + 100000 * i)
+               for i, size in enumerate(sizes)]
+    share = sum(r["win_share"] * r["games"] for r in results) / games
+    result = {"games": games, "seed": seed, "win_share": share,
+              "promotion_threshold": minimum_share,
+              "batch_win_shares": [r["win_share"] for r in results],
+              "mean_score": sum(r["mean_score"] * r["games"] for r in results) / games,
+              "mean_penalties": sum(r["mean_penalties"] * r["games"] for r in results) / games,
+              "mean_completed_rows": sum(r["mean_completed_rows"] * r["games"] for r in results) / games,
+              "opponent": "three_champions"}
+    result["promoted"] = share >= minimum_share and all(
+        r["win_share"] > 0.25 for r in results)
     if result["promoted"]:
-        save(challenger, Path(destination), win_share=result["win_share"],
+        save(challenger, Path(destination), win_share=share,
              promotion_games=games, promotion_seed=seed)
     return result
 
