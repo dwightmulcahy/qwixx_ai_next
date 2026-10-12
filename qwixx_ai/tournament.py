@@ -22,8 +22,17 @@ def evaluate(model,games=100,opponent='heuristic',seed=1000):
     return {'games':games,'win_share':wins/games,'mean_score':score/games,'opponent':opponent}
 
 def main():
-    import argparse,json
+    import argparse,json,random
+    import numpy as np
+    import torch
     p=argparse.ArgumentParser();p.add_argument('checkpoint');p.add_argument('--games',type=int,default=200)
-    p.add_argument('--opponent',choices=['heuristic','random'],default='heuristic');a=p.parse_args()
-    print(json.dumps(evaluate(load(a.checkpoint),a.games,a.opponent),indent=2))
+    p.add_argument('--opponent',choices=['heuristic','random','both'],default='heuristic')
+    p.add_argument('--seed',type=int,default=1000)
+    a=p.parse_args()
+    model=load(a.checkpoint)
+    results=[]
+    for opponent in (['heuristic','random'] if a.opponent=='both' else [a.opponent]):
+        random.seed(a.seed);np.random.seed(a.seed);torch.manual_seed(a.seed)
+        results.append(evaluate(model,a.games,opponent,seed=a.seed))
+    print(json.dumps({'checkpoint':a.checkpoint,'seed':a.seed,'results':results},indent=2))
 if __name__=='__main__':main()
