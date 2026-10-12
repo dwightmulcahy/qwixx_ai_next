@@ -132,7 +132,7 @@ class PlayerStats:
         with self.lock:
             try:
                 pid = uuid.uuid4().hex
-                self.db.execute("INSERT INTO players VALUES (?,?,?)", (pid, name, time.time()))
+                self.db.execute("INSERT INTO players (id,name,created) VALUES (?,?,?)", (pid, name, time.time()))
                 self.db.commit()
             except sqlite3.IntegrityError as exc:
                 raise ValueError("That player name already exists") from exc
