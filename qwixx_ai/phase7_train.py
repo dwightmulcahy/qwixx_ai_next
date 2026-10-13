@@ -43,6 +43,7 @@ def main():
     parser.add_argument("--targeted", default="runs/phase7/disagreements.npz")
     parser.add_argument("--merged", default="runs/phase7/combined.npz")
     parser.add_argument("--output", default="runs/phase7/targeted.pt")
+    parser.add_argument("--initial", default="runs/phase6/imitation.pt")
     parser.add_argument("--targeted-repeat", type=int, default=3)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=512)
@@ -52,7 +53,8 @@ def main():
     summary = merge(args.original, args.targeted, args.merged,
                     args.targeted_repeat)
     summary["training"] = train(args.merged, args.output, args.epochs,
-                                args.batch_size, args.lr, seed=args.seed)
+                                args.batch_size, args.lr, seed=args.seed,
+                                initial=args.initial)
     print(json.dumps(summary, indent=2))
 
 
