@@ -44,7 +44,8 @@ def gae(rewards, values, gamma=0.99, lam=0.95):
     return advantages, advantages + torch.tensor(values)
 
 
-def episode(policy, critic, seed, generator, imitation, snapshots,\n            gamma=0.99, gae_lambda=0.95):
+def episode(policy, critic, seed, generator, imitation, snapshots,
+            gamma=0.99, gae_lambda=0.95):
     game = Game(seed=seed)
     learner = seed % 4
     states, masks, actions, teachers, log_probs, values = [], [], [], [], [], []
