@@ -8,11 +8,11 @@ import numpy as np
 import torch
 from torch import nn
 
-from .model import network, save
+from .model import load, network, save
 
 
 def train(dataset, output, epochs=20, batch_size=512, lr=0.001,
-          val_fraction=0.2, seed=6100):
+          val_fraction=0.2, seed=6100, initial=None):
     if epochs < 1 or batch_size < 1 or not 0 < val_fraction < 1:
         raise ValueError("invalid training parameters")
     random.seed(seed)
@@ -35,7 +35,9 @@ def train(dataset, output, epochs=20, batch_size=512, lr=0.001,
     if not masks[np.arange(len(actions)), actions].all():
         raise ValueError("dataset contains illegal labels")
     device = torch.device("cpu")
-    model = network(x.shape[1]).to(device)
+    model = (load(initial) if initial is not None else network(x.shape[1])).to(device)
+    if model[0].in_features != x.shape[1]:
+        raise ValueError("initial checkpoint has incompatible observations")
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     features = torch.from_numpy(x).float()
     legal = torch.from_numpy(masks).bool()
