@@ -44,7 +44,7 @@ def gae(rewards, values, gamma=0.99, lam=0.95):
     return advantages, advantages + torch.tensor(values)
 
 
-def episode(policy, critic, seed, generator, imitation, snapshots):
+def episode(policy, critic, seed, generator, imitation, snapshots,\n            gamma=0.99, gae_lambda=0.95):
     game = Game(seed=seed)
     learner = seed % 4
     states, masks, actions, teachers, log_probs, values = [], [], [], [], [], []
@@ -80,7 +80,7 @@ def episode(policy, critic, seed, generator, imitation, snapshots):
     rewards = [0.0] * len(states)
     if rewards:
         rewards[-1] = reward
-    advantages, returns = gae(rewards, values)
+    advantages, returns = gae(rewards, values, gamma, gae_lambda)
     return (states, masks, actions, teachers, log_probs,
             advantages.tolist(), returns.tolist(), share, scores[learner])
 
@@ -112,7 +112,7 @@ def train(initial="runs/phase6/imitation.pt", out="runs/phase6_2",
     best_path = directory / "best_dev.pt"
     for index in range(episodes):
         records.append(episode(policy, critic, seed + index, generator,
-                               imitation, snapshots))
+                               imitation, snapshots, gamma, gae_lambda))
         if len(records) == batch_games or index == episodes - 1:
             states, legal, actions, teachers, old_logp, adv, ret = (
                 [item for record in records for item in record[field]]
