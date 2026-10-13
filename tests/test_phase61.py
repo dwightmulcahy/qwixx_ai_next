@@ -1,11 +1,8 @@
 """Phase 6.1 smoke tests."""
-import json
-
 import pytest
 import torch
 
 from qwixx_ai.core import Game
-from qwixx_ai.env import mask
 from qwixx_ai.model import network, save, load
 from qwixx_ai.phase61_train import play_episode, sample_action, train
 from qwixx_ai.phase61_validate import evaluate
