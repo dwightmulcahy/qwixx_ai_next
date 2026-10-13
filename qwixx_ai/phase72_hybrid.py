@@ -4,13 +4,13 @@ from .heuristic_v2 import heuristic_v2
 from .model import choose
 
 
-def large_jump(game, action):
+def large_jump(game, action, threshold=3):
     if action is None:
         return False
     color, number, _ = action
     row = game.boards[game.actor].rows[color]
     previous = ORDER[color].index(row[-1]) if row else -1
-    return ORDER[color].index(number) - previous - 1 >= 3
+    return ORDER[color].index(number) - previous - 1 >= threshold
 
 
 def select(game, model, mode="student"):
