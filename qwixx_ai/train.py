@@ -19,7 +19,8 @@ from .phase54 import select_checkpoint, exploration_rate, opponent_pool
 
 def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=(), learning_rate=None,
           eval_interval=None, rollback_patience=3, rollback_floor=0.22,
-          phase52=False, promotion_alpha=0.05, phase53=False, phase54=False):
+          phase52=False, promotion_alpha=0.05, phase53=False, phase54=False,
+          phase55=False, anchor_weight=0.05, update_every=4):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
     if episodes < 1 or eval_games < 1 or target_interval < 1:
         raise ValueError('episodes, eval_games and target_interval must be positive')
@@ -55,6 +56,13 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
     weak_evals=0
     best_competitive=-1.0
     best_league_score=float('-inf')
+    best_candidate_score=float('-inf')
+    game_steps=0
+    anchor=freeze(champion) if phase55 and champion is not None else None
+    if phase55 and not phase54:
+        raise ValueError('--phase55 requires --phase54')
+    if phase55 and (anchor_weight < 0 or update_every < 1):
+        raise ValueError('invalid Phase 5.5 regularization or update interval')
     if phase54 and not phase53:
         raise ValueError('--phase54 requires --phase53')
     if phase54 and len(historical_paths) < 2:
@@ -107,7 +115,8 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                 elif isinstance(pick,tuple):a=choose(permanent_opponents[pick[1]],g)
                 else:a=choose(snapshots[pick],g)
                 g.step(a)
-            if len(replay)>=128:
+            game_steps+=1
+            if len(replay)>=128 and (not phase55 or game_steps % update_every == 0):
                 population=list(replay)
                 weights=np.asarray(priorities,dtype=np.float64)**0.6
                 probabilities=weights/weights.sum()
@@ -127,6 +136,13 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                 importance/=importance.max()
                 individual_losses=nn.functional.smooth_l1_loss(q,expected,reduction='none')
                 loss=(individual_losses*torch.tensor(importance,dtype=torch.float32)).mean()
+                if phase55:
+                    with torch.no_grad():
+                        anchor_q=anchor(torch.tensor(np.stack(ss)))
+                    anchor_actions=anchor_q.argmax(dim=1,keepdim=True)
+                    anchor_values=anchor_q.gather(1,anchor_actions).squeeze(1)
+                    policy_values=policy(torch.tensor(np.stack(ss))).gather(1,anchor_actions).squeeze(1)
+                    loss=loss+anchor_weight*nn.functional.smooth_l1_loss(policy_values,anchor_values)
                 opt.zero_grad();loss.backward();nn.utils.clip_grad_norm_(policy.parameters(),5);opt.step();updates+=1
                 for index,error in zip(indices,td_errors):
                     priorities[int(index)]=float(error)+0.01
@@ -156,6 +172,10 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                         max_checks=(episodes+interval-1)//interval,
                         lineup=permanent_opponents[:3],
                         incumbent_score=best_league_score)
+                    if phase55 and duel['selection']['score'] > best_candidate_score:
+                        best_candidate_score=duel['selection']['score']
+                        save(policy,folder/'best_candidate.pt',episode=ep+1,
+                             league_score=best_candidate_score)
                     if duel['selection']['selected']:
                         best_league_score=duel['selection']['score']
                         save(policy,folder/'best_competitive.pt',episode=ep+1,
@@ -252,8 +272,12 @@ def main():
     p.add_argument('--promotion-alpha',type=float,default=0.05)
     p.add_argument('--phase53',action='store_true',help='Controlled fixed-lineup paired evaluation')
     p.add_argument('--phase54',action='store_true',help='Lower exploration, stronger league and multi-opponent selection')
+    p.add_argument('--phase55',action='store_true',help='Conservative updates, champion anchor, and unconditional best candidate')
+    p.add_argument('--anchor-weight',type=float,default=0.05)
+    p.add_argument('--update-every',type=int,default=4)
     a=p.parse_args();train(a.episodes,a.seed,a.out,a.eval_games,a.target_interval,
                            a.champion,a.promotion_games,a.warm_start,a.phase5,a.historical,
                            a.learning_rate,a.eval_interval,a.rollback_patience,
-                           a.rollback_floor,a.phase52,a.promotion_alpha,a.phase53,a.phase54)
+                           a.rollback_floor,a.phase52,a.promotion_alpha,a.phase53,a.phase54,
+                           a.phase55,a.anchor_weight,a.update_every)
 if __name__=='__main__':main()
