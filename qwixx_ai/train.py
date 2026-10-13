@@ -13,9 +13,11 @@ from .tournament import evaluate
 from .learning import potential, shaped_reward, terminal_reward
 from .league import freeze, promote
 from .phase5 import evaluate_promotion
+from .phase52 import evaluate_promotion as evaluate_promotion_v52
 
 def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=(), learning_rate=None,
-          eval_interval=None, rollback_patience=3, rollback_floor=0.22):
+          eval_interval=None, rollback_patience=3, rollback_floor=0.22,
+          phase52=False, promotion_alpha=0.05):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
     if episodes < 1 or eval_games < 1 or target_interval < 1:
         raise ValueError('episodes, eval_games and target_interval must be positive')
@@ -50,6 +52,8 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         raise ValueError('Historical checkpoint has incompatible observations')
     weak_evals=0
     best_competitive=-1.0
+    if phase52 and not phase5:
+        raise ValueError('--phase52 requires --phase5')
     if phase5 and champion is None:
         raise ValueError('--phase5 requires --champion')
     for ep in range(episodes):
@@ -131,7 +135,14 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                 best=result['win_share'];save(policy,folder/'best.pt',episode=ep+1,win_share=best)
             save(policy,folder/'latest.pt',episode=ep+1)
             if champion is not None:
-                if phase5:
+                if phase52:
+                    duel=evaluate_promotion_v52(
+                        policy,champion,historical,
+                        rounds=max(2,promotion_games//8),seed=900000+ep+1,
+                        alpha=promotion_alpha,
+                        max_checks=(episodes+interval-1)//interval,
+                        destination=folder/'champion.pt')
+                elif phase5:
                     duel=evaluate_promotion(
                         policy,champion,historical,
                         rounds=max(2,promotion_games//4),seed=900000+ep+1,
@@ -142,11 +153,15 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                 row['head_to_head']=duel
                 if phase5:
                     primary=duel['primary']
-                    if primary['win_share'] > best_competitive:
-                        best_competitive=primary['win_share']
+                    competitive_score=(primary['paired_advantage'] if phase52
+                                       else primary['win_share'])
+                    if competitive_score > best_competitive:
+                        best_competitive=competitive_score
                         save(policy,folder/'best_competitive.pt',episode=ep+1,
                              win_share=best_competitive)
-                    if primary['ci95_high'] < rollback_floor:
+                    weak=(primary['advantage_ci_high'] < rollback_floor-0.25
+                          if phase52 else primary['ci95_high'] < rollback_floor)
+                    if weak:
                         weak_evals+=1
                     else:
                         weak_evals=0
@@ -162,6 +177,11 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                         with log.open('a') as f:f.write(json.dumps(rollback)+'\n')
                         print(json.dumps(rollback),flush=True)
                 if duel['promoted']:
+                    if phase52:
+                        archive=folder/'champions'
+                        archive.mkdir(parents=True,exist_ok=True)
+                        save(policy,archive/f'episode_{ep+1:07d}.pt',
+                             episode=ep+1,paired_advantage=duel['primary']['paired_advantage'])
                     champion=freeze(policy)
                     snapshots[0]=champion
                     weak_evals=0
@@ -189,8 +209,10 @@ def main():
     p.add_argument('--eval-interval',type=int,default=None)
     p.add_argument('--rollback-patience',type=int,default=3)
     p.add_argument('--rollback-floor',type=float,default=0.22)
+    p.add_argument('--phase52',action='store_true',help='Use symmetric paired promotion and archive champions')
+    p.add_argument('--promotion-alpha',type=float,default=0.05)
     a=p.parse_args();train(a.episodes,a.seed,a.out,a.eval_games,a.target_interval,
                            a.champion,a.promotion_games,a.warm_start,a.phase5,a.historical,
                            a.learning_rate,a.eval_interval,a.rollback_patience,
-                           a.rollback_floor)
+                           a.rollback_floor,a.phase52,a.promotion_alpha)
 if __name__=='__main__':main()
