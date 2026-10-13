@@ -4,7 +4,6 @@ import json
 import math
 from statistics import NormalDist, mean, stdev
 
-from .agents import heuristic
 from .heuristic_v2 import heuristic_v2
 from .model import choose, load
 from .tournament import play
