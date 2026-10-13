@@ -3,7 +3,6 @@ import pytest
 
 from qwixx_ai.core import Game
 from qwixx_ai.env import observe
-from qwixx_ai.heuristic_v2 import heuristic_v2
 from qwixx_ai.model import network
 from qwixx_ai.phase72_counterfactual import evaluate as counterfactual
 from qwixx_ai.phase72_hybrid import select
