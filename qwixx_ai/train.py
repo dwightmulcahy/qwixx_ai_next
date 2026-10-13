@@ -12,7 +12,7 @@ from .agents import heuristic,random_agent
 from .tournament import evaluate
 from .learning import potential, shaped_reward, terminal_reward
 from .league import freeze, promote
-from .phase5 import evaluate_promotion, paired_evaluate
+from .phase5 import evaluate_promotion
 
 def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=(), learning_rate=None,
           eval_interval=None, rollback_patience=3, rollback_floor=0.22):
