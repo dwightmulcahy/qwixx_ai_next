@@ -5,7 +5,6 @@ which must differ. Only actual overrides are audited, avoiding selection bias
 from reusing the same futures. Exploratory, not a policy promotion.
 """
 import argparse
-import copy
 import json
 import random
 from pathlib import Path
