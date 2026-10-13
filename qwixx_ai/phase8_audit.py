@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .core import Game, ORDER
+from .core import COLORS, Game, ORDER
 from .heuristic_v2 import heuristic_v2
 from .model import choose, load
 from .phase71_counterfactual import finish
@@ -141,7 +141,7 @@ def audit(model, games=1000, seed=810000, futures=16,
             "score": [intervals[0][1], intervals[1][1]],
         } if intervals is not None else None,
         "breakdown": breakdown,
-        "override_colors": dict(Counter(ORDER[r["color"]][0]
+        "override_colors": dict(Counter(COLORS[r["color"]]
                                         for r in records)),
         "warning": "Exploratory only. Paired RNG streams can diverge when "
                    "actions change game duration; bootstrap intervals are "
