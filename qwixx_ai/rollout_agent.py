@@ -1,52 +1,73 @@
-"""Monte Carlo lookahead policy using V2 for simulated future decisions.
-
-Rollouts reuse the current game's RNG state, so candidate moves see matched
-future dice. This is a deterministic approximation, not an exact game solver.
-"""
+"""Matched-randomness Monte Carlo Qwixx policy with V2 fallback."""
 import copy
+import random
 
 from .heuristic_v2 import heuristic_v2
 
 
-def rollout(game, simulations=8, horizon=32):
-    """Pick the action with the best approximate future outcome.
+def _share(scores, seat):
+    top = max(scores)
+    return (1 / sum(score == top for score in scores)
+            if scores[seat] == top else 0.0)
 
-    A small horizon limits per-move CPU work for browser/server use.
-    Set simulations=1 for deterministic single-future lookahead.
+
+def rollout_details(game, simulations=8, horizon=None, opponents=None,
+                    seed=20261013, min_improvement=0.025):
+    """Evaluate every legal action with matched future dice and full-game rollouts.
+
+    horizon=None plays to game end; a finite horizon uses a V2 continuation
+    estimate, not a premature terminal win/loss. Each candidate gets identical
+    random states per trial. Opponents is a seat-indexed list of callables.
     """
-    if simulations < 1 or horizon < 1:
+    if simulations < 1 or (horizon is not None and horizon < 1):
         raise ValueError("simulations and horizon must be positive")
-    choices = [None, *game.legal()]
-    if len(choices) == 1:
-        return None
+    if min_improvement < 0:
+        raise ValueError("min_improvement must be nonnegative")
+    if opponents is not None and len(opponents) != game.n:
+        raise ValueError("opponents must have one policy per seat")
+    policies = opponents if opponents is not None else [heuristic_v2] * game.n
     actor = game.actor
-    initial_scores = game.scores()
-    best_action = None
-    best_value = float("-inf")
-    for action in choices:
-        total = 0.0
-        for trial in range(simulations):
+    choices = [None, *game.legal()]
+    fallback = heuristic_v2(game)
+    # All candidates receive the same future RNG state in each trial.
+    generator = random.Random(seed)
+    states = [random.Random(generator.getrandbits(64)).getstate()
+              for _ in range(simulations)]
+    totals = {a: 0.0 for a in choices}
+    wins = {a: 0.0 for a in choices}
+    for state in states:
+        for action in choices:
             future = copy.deepcopy(game)
-            # Use distinct but matched future dice for each trial/action.
-            if trial:
-                future.rng.seed((future.rng.getrandbits(64) ^ (trial * 0x9E3779B97F4A7C15))
-                                & ((1 << 64) - 1))
+            future.rng.setstate(state)
             future.step(action)
-            steps = 0
-            while not future.done and steps < horizon:
-                future.step(heuristic_v2(future))
-                steps += 1
+            decisions = 0
+            while not future.done and (horizon is None or decisions < horizon):
+                future.step(policies[future.actor](future))
+                decisions += 1
             scores = future.scores()
-            margin = scores[actor] - max(
-                scores[i] for i in range(future.n) if i != actor
-            )
-            # Win-focused objective with a small score-difference tie-breaker.
-            value = (1.0 if margin > 0 else 0.5 if margin == 0 else 0.0)
-            value += 0.015 * margin
-            value += 0.002 * (scores[actor] - initial_scores[actor])
-            total += value
-        average = total / simulations
-        if average > best_value:
-            best_value = average
-            best_action = action
-    return best_action
+            if future.done:
+                value = _share(scores, actor)
+                wins[action] += value
+            else:
+                # Nonterminal evaluation avoids treating an early score lead as a win.
+                margin = scores[actor] - max(
+                    scores[i] for i in range(future.n) if i != actor)
+                value = 0.5 + max(-0.4, min(0.4, margin / 100))
+            totals[action] += value
+    averages = {action: total / simulations for action, total in totals.items()}
+    best = max(choices, key=lambda action: averages[action])
+    # Small/noisy improvements defer to the proven deterministic baseline.
+    selected = best if averages[best] > averages[fallback] + min_improvement else fallback
+    return {
+        "action": selected, "fallback": fallback,
+        "changed": selected != fallback,
+        "estimates": averages,
+        "win_shares": {a: value / simulations for a, value in wins.items()},
+        "simulations": simulations,
+    }
+
+
+def rollout(game, simulations=8, horizon=None, opponents=None,
+            seed=20261013, min_improvement=0.025):
+    return rollout_details(game, simulations, horizon, opponents,
+                           seed, min_improvement)["action"]
