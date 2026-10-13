@@ -54,10 +54,10 @@ def main():
     policies = [("heuristic_v1", heuristic), ("heuristic_v2", heuristic_v2)]
     if args.champion:
         model = load(args.champion)
-        policies.append(("champion", lambda game: choose(model, game)))
+        policies.append(("champion", lambda game, model=model: choose(model, game)))
     if args.candidate:
         model = load(args.candidate)
-        policies.append(("candidate", lambda game: choose(model, game)))
+        policies.append(("candidate", lambda game, model=model: choose(model, game)))
     print(json.dumps(evaluate_policies(policies, args.rounds, args.seed), indent=2))
 
 
