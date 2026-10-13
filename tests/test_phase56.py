@@ -1,6 +1,5 @@
 """Phase 5.6 factorial experiment regression tests."""
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 
