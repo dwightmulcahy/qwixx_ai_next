@@ -4,7 +4,7 @@ import pytest
 from qwixx_ai.core import Game
 from qwixx_ai.controlled_strategy import paired_compare
 from qwixx_ai.heuristic_v2 import heuristic_v2
-from qwixx_ai.rollout_agent import rollout
+from qwixx_ai.rollout_agent import rollout, rollout_details
 
 
 def test_paired_comparison_repeatable():
@@ -32,3 +32,23 @@ def test_rollout_returns_legal_move_without_mutating_game():
 def test_rollout_validates_budget():
     with pytest.raises(ValueError, match="positive"):
         rollout(Game(seed=2), simulations=0)
+
+
+def test_rollout_diagnostics_are_deterministic():
+    game = Game(seed=32)
+    first = rollout_details(game, simulations=2, horizon=8, seed=444)
+    second = rollout_details(game, simulations=2, horizon=8, seed=444)
+    assert first == second
+    assert first["action"] is None or first["action"] in game.legal()
+
+
+def test_rollout_can_finish_full_games():
+    game = Game(seed=12)
+    detail = rollout_details(game, simulations=1, seed=55)
+    assert detail["action"] is None or detail["action"] in game.legal()
+    assert all(0 <= score <= 1 for score in detail["win_shares"].values())
+
+
+def test_rollout_validates_opponent_count():
+    with pytest.raises(ValueError, match="one policy per seat"):
+        rollout(Game(seed=7), opponents=[heuristic_v2])
