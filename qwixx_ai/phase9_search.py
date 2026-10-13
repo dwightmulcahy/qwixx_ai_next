@@ -11,7 +11,6 @@ import json
 import random
 
 from .controlled_strategy import paired_compare
-from .core import Game
 from .heuristic_v2 import heuristic_v2
 
 
