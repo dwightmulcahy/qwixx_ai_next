@@ -12,8 +12,9 @@ from .agents import heuristic,random_agent
 from .tournament import evaluate
 from .learning import potential, shaped_reward, terminal_reward
 from .league import freeze, promote
+from .phase5 import evaluate_promotion
 
-def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False):
+def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=()):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
     folder=Path(out);folder.mkdir(parents=True,exist_ok=True)
     obs_size=observe(Game()).size;policy=network(obs_size);target=network(obs_size)
@@ -31,6 +32,9 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
             target.load_state_dict(policy.state_dict())
     elif warm_start:
         raise ValueError('--warm-start requires --champion')
+    historical=[freeze(load(path)) for path in historical_paths]
+    if phase5 and champion is None:
+        raise ValueError('--phase5 requires --champion')
     for ep in range(episodes):
         g=Game(seed=seed+ep)
         epsilon=(max(.05,.20-.15*ep/max(1,episodes*.9)) if warm_start
@@ -108,8 +112,14 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                 best=result['win_share'];save(policy,folder/'best.pt',episode=ep+1,win_share=best)
             save(policy,folder/'latest.pt',episode=ep+1)
             if champion is not None:
-                duel=promote(policy,champion,folder/'champion.pt',games=promotion_games,
-                             seed=900000+ep+1)
+                if phase5:
+                    duel=evaluate_promotion(
+                        policy,champion,historical,
+                        rounds=max(2,promotion_games//4),seed=900000+ep+1,
+                        destination=folder/'champion.pt')
+                else:
+                    duel=promote(policy,champion,folder/'champion.pt',games=promotion_games,
+                                 seed=900000+ep+1)
                 row['head_to_head']=duel
                 if duel['promoted']:
                     champion=freeze(policy)
@@ -132,6 +142,8 @@ def main():
     p.add_argument('--champion',default=None,help='Existing champion checkpoint for league training')
     p.add_argument('--promotion-games',type=int,default=1000)
     p.add_argument('--warm-start',action='store_true',help='Initialize policy and target from champion')
+    p.add_argument('--phase5',action='store_true',help='Use paired-seed confidence-gated promotion')
+    p.add_argument('--historical',nargs='*',default=[],help='Historical champion checkpoints')
     a=p.parse_args();train(a.episodes,a.seed,a.out,a.eval_games,a.target_interval,
-                           a.champion,a.promotion_games,a.warm_start)
+                           a.champion,a.promotion_games,a.warm_start,a.phase5,a.historical)
 if __name__=='__main__':main()
