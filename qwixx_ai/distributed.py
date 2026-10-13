@@ -10,6 +10,7 @@ from .core import Game
 from .env import observe,mask,encode,decode
 from .model import network,choose,save,load
 from .agents import heuristic,random_agent
+from .heuristic_v2 import heuristic_v2
 from .tournament import evaluate
 from .web import HTML as GAME_HTML, Session
 from .player_stats import PlayerStats
@@ -129,7 +130,7 @@ class Coordinator:
                 transitions.append((s,a,reward,observe(g),False,mask(g)))
             with self.lock:
                 policy=self.rng.choice(list(self.league)) if self.league and self.rng.random()<.15 else (self.best_model if self.best_model is not None and self.rng.random()<.35 else self.model)
-                a=choose(policy,g,epsilon=self.exploration()) if self.rng.random()<.65 else (heuristic(g) if self.rng.random()<.8 else random_agent(g))
+                a=choose(policy,g,epsilon=self.exploration()) if self.rng.random()<.65 else (heuristic_v2(g) if self.rng.random()<.65 else (heuristic(g) if self.rng.random()<.8 else random_agent(g)))
             last[who]=(observe(g).copy(),encode(a),g.scores()[who],potential(g,who));moves.append(encode(a));g.step(a)
         scores=g.scores()
         for who,item in enumerate(last):
