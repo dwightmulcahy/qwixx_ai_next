@@ -12,13 +12,24 @@ from .agents import heuristic,random_agent
 from .tournament import evaluate
 from .learning import potential, shaped_reward, terminal_reward
 from .league import freeze, promote
-from .phase5 import evaluate_promotion
+from .phase5 import evaluate_promotion, paired_evaluate
 
-def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=()):
+def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=(), learning_rate=None,
+          eval_interval=None, rollback_patience=3, rollback_floor=0.22):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
+    if episodes < 1 or eval_games < 1 or target_interval < 1:
+        raise ValueError('episodes, eval_games and target_interval must be positive')
+    if rollback_patience < 1 or not 0 <= rollback_floor <= 1:
+        raise ValueError('invalid rollback settings')
+    interval=eval_interval or max(1,episodes//10)
+    if interval < 1:
+        raise ValueError('eval_interval must be positive')
+    lr=learning_rate if learning_rate is not None else (1e-4 if warm_start else 5e-4)
+    if lr <= 0:
+        raise ValueError('learning_rate must be positive')
     folder=Path(out);folder.mkdir(parents=True,exist_ok=True)
     obs_size=observe(Game()).size;policy=network(obs_size);target=network(obs_size)
-    target.load_state_dict(policy.state_dict());opt=torch.optim.Adam(policy.parameters(),lr=5e-4)
+    target.load_state_dict(policy.state_dict());opt=torch.optim.Adam(policy.parameters(),lr=lr)
     replay=deque(maxlen=50000);priorities=deque(maxlen=50000);snapshots=[];best=-1;updates=0
     log=folder/'metrics.jsonl'
     champion=None
@@ -33,6 +44,12 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
     elif warm_start:
         raise ValueError('--warm-start requires --champion')
     historical=[freeze(load(path)) for path in historical_paths]
+    original_champion=freeze(champion) if champion is not None else None
+    permanent_opponents=([original_champion]+historical if champion is not None else [])
+    if any(model[0].in_features != obs_size for model in historical):
+        raise ValueError('Historical checkpoint has incompatible observations')
+    weak_evals=0
+    best_competitive=-1.0
     if phase5 and champion is None:
         raise ValueError('--phase5 requires --champion')
     for ep in range(episodes):
@@ -51,6 +68,7 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                     champion_weight=2+int(4*progress)
                     candidates=['current','heuristic','random']+[0]*champion_weight
                     candidates+=list(range(1,len(snapshots)))*2
+                    candidates += [('permanent',i) for i in range(len(permanent_opponents))]*2
                 pick=random.choice(candidates)
                 opponents.append(pick)
         pending=None
@@ -70,6 +88,7 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                 if pick=='heuristic':a=heuristic(g)
                 elif pick=='random':a=random_agent(g)
                 elif pick=='current':a=choose(policy,g,epsilon)
+                elif isinstance(pick,tuple):a=choose(permanent_opponents[pick[1]],g)
                 else:a=choose(snapshots[pick],g)
                 g.step(a)
             if len(replay)>=128:
@@ -103,7 +122,7 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
             final+=terminal_reward(scores,learner)
             replay.append((s,a,final,observe(g),True,mask(g)))
             priorities.append(max(priorities,default=1.0))
-        if (ep+1)%max(1,episodes//10)==0 or ep==episodes-1:
+        if (ep+1)%interval==0 or ep==episodes-1:
             policy.eval();result=evaluate(policy,eval_games,seed=100000)
             row={'episode':ep+1,'epsilon':round(epsilon,4),**result}
             with log.open('a') as f:f.write(json.dumps(row)+'\n')
@@ -121,9 +140,31 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                     duel=promote(policy,champion,folder/'champion.pt',games=promotion_games,
                                  seed=900000+ep+1)
                 row['head_to_head']=duel
+                if phase5:
+                    primary=duel['primary']
+                    if primary['win_share'] > best_competitive:
+                        best_competitive=primary['win_share']
+                        save(policy,folder/'best_competitive.pt',episode=ep+1,
+                             win_share=best_competitive)
+                    if primary['ci95_high'] < rollback_floor:
+                        weak_evals+=1
+                    else:
+                        weak_evals=0
+                    if weak_evals >= rollback_patience:
+                        policy.load_state_dict(champion.state_dict())
+                        target.load_state_dict(policy.state_dict())
+                        opt=torch.optim.Adam(policy.parameters(),lr=lr)
+                        replay.clear();priorities.clear();updates=0
+                        weak_evals=0
+                        rollback={'episode':ep+1,'rollback':True,
+                                  'reason':'confidence upper bound below rollback floor',
+                                  'floor':rollback_floor}
+                        with log.open('a') as f:f.write(json.dumps(rollback)+'\n')
+                        print(json.dumps(rollback),flush=True)
                 if duel['promoted']:
                     champion=freeze(policy)
                     snapshots[0]=champion
+                    weak_evals=0
                 with log.open('a') as f:f.write(json.dumps({'episode':ep+1,'head_to_head':duel})+'\n')
                 print(json.dumps({'episode':ep+1,'head_to_head':duel}),flush=True)
             if len(snapshots)<8:
@@ -144,6 +185,12 @@ def main():
     p.add_argument('--warm-start',action='store_true',help='Initialize policy and target from champion')
     p.add_argument('--phase5',action='store_true',help='Use paired-seed confidence-gated promotion')
     p.add_argument('--historical',nargs='*',default=[],help='Historical champion checkpoints')
+    p.add_argument('--learning-rate',type=float,default=None)
+    p.add_argument('--eval-interval',type=int,default=None)
+    p.add_argument('--rollback-patience',type=int,default=3)
+    p.add_argument('--rollback-floor',type=float,default=0.22)
     a=p.parse_args();train(a.episodes,a.seed,a.out,a.eval_games,a.target_interval,
-                           a.champion,a.promotion_games,a.warm_start,a.phase5,a.historical)
+                           a.champion,a.promotion_games,a.warm_start,a.phase5,a.historical,
+                           a.learning_rate,a.eval_interval,a.rollback_patience,
+                           a.rollback_floor)
 if __name__=='__main__':main()
