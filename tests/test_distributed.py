@@ -230,3 +230,18 @@ def test_browser_worker_observation_matches_python_dimensions():
     from qwixx_ai.env import observe
     assert len(observe(Game())) == 263
     assert 'remaining/11' in distributed.WORKER_JS
+
+
+def test_training_dashboard_link_and_status():
+    from qwixx_ai.distributed import DASHBOARD_HTML
+    from qwixx_ai.web import HTML
+
+    assert 'href="/training"' in HTML
+    assert 'id="training-dashboard"' in DASHBOARD_HTML
+    assert "Training ${x.paused?'PAUSED':'ACTIVE'}" in DASHBOARD_HTML
+
+
+def test_step_two_strike_prompt_only_when_no_legal_moves():
+    from qwixx_ai.web import HTML
+
+    assert "strike&&state.legal.length===0" in HTML
