@@ -350,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'games':self.coord.history(limit)})
             if self.path=='/api/auth/me':
                 pid=self.player_id();return self.reply({'player':self.coord.player_stats.profile(pid) if pid else None})
-            if self.path.startswith('/api/player-stats?'):
+            if self.path=='/api/player-stats' or self.path.startswith('/api/player-stats?'):
                 from urllib.parse import parse_qs, urlsplit
                 query=parse_qs(urlsplit(self.path).query);pid=self.player_id()
                 if not pid:return self.reply({'error':'Sign in required'},401)
