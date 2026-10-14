@@ -49,8 +49,10 @@ class PlayerStats:
             if not isinstance(name,str) or not 1<=len(name.strip())<=40:
                 raise ValueError("Name must be 1–40 characters")
             name=name.strip()
-        host=os.getenv("QWIXX_SMTP_HOST")
-        sender=os.getenv("QWIXX_SMTP_FROM")
+        host=os.getenv("QWIXX_SMTP_HOST") or os.getenv("SMTP_HOST") or ("smtp.gmail.com" if os.getenv("GMAIL_ID") else "")
+        user=os.getenv("QWIXX_SMTP_USER") or os.getenv("SMTP_USER") or os.getenv("GMAIL_ID")
+        sender=os.getenv("QWIXX_SMTP_FROM") or user
+        password=os.getenv("QWIXX_SMTP_PASSWORD") or os.getenv("SMTP_PASS") or os.getenv("GMAIL_TOKEN") or ""
         if not host or not sender:
             raise RuntimeError("Email verification is not configured on the server")
         now=time.time()
@@ -63,16 +65,16 @@ class PlayerStats:
             message=EmailMessage()
             message["From"]=sender;message["To"]=email;message["Subject"]="Qwixx AI verification code"
             message.set_content(f"Your Qwixx AI sign-in code is {code}. It expires in 10 minutes. If you did not request this, ignore this message.")
-            port=int(os.getenv("QWIXX_SMTP_PORT","587"))
-            if os.getenv("QWIXX_SMTP_SSL","false").lower()=="true":
+            port=int(os.getenv("QWIXX_SMTP_PORT") or os.getenv("SMTP_PORT") or "587")
+            use_ssl=os.getenv("QWIXX_SMTP_SSL","").lower() in ("true","1","yes") or port==465
+            if use_ssl:
                 smtp=smtplib.SMTP_SSL(host,port,timeout=15)
             else:
                 smtp=smtplib.SMTP(host,port,timeout=15)
             with smtp:
-                if os.getenv("QWIXX_SMTP_SSL","false").lower()!="true":
+                if not use_ssl:
                     smtp.starttls()
-                user=os.getenv("QWIXX_SMTP_USER")
-                if user:smtp.login(user,os.getenv("QWIXX_SMTP_PASSWORD",""))
+                if user:smtp.login(user,password)
                 smtp.send_message(message)
             self.db.execute("INSERT OR REPLACE INTO auth_codes VALUES (?,?,?,?,?,?)",(email,digest,now+600,0,now,name))
             self.db.commit()
