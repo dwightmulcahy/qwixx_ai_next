@@ -305,3 +305,12 @@ def test_account_tab_unhides_career_and_displays_full_game_history():
                   "Average penalties", "Average turns", "Win rate"):
         assert field in HTML
     assert "/api/player-stats?limit=100" in HTML
+
+
+def test_unavailable_white_total_skips_without_confirmation():
+    from qwixx_ai.web import HTML
+
+    assert "Pass on the white dice total" not in HTML
+    assert "No legal marks available. Skipping gives you a strike" not in HTML
+    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
+    assert "A strike only occurs if you skip both opportunities on your roll." in HTML
