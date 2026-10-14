@@ -1,7 +1,5 @@
 """Phase 10.2 disagreement audit regression tests."""
 import json
-from types import SimpleNamespace
-
 import pytest
 
 from qwixx_ai.core import Game
