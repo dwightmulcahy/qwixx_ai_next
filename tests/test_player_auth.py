@@ -9,9 +9,12 @@ from qwixx_ai.player_stats import PlayerStats
 
 class FakeSMTP:
     messages = []
+    connections = []
+    logins = []
+    starttls_calls = 0
 
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, host, port, **kwargs):
+        self.connections.append((host, port, kwargs.get("timeout")))
 
     def __enter__(self):
         return self
@@ -20,13 +23,20 @@ class FakeSMTP:
         pass
 
     def starttls(self):
-        pass
+        type(self).starttls_calls += 1
 
-    def login(self, *args):
-        pass
+    def login(self, user, password):
+        self.logins.append((user, password))
 
     def send_message(self, message):
         self.messages.append(message)
+
+
+def _reset_fake_smtp():
+    FakeSMTP.messages.clear()
+    FakeSMTP.connections.clear()
+    FakeSMTP.logins.clear()
+    FakeSMTP.starttls_calls = 0
 
 
 def _configure_shared_smtp(monkeypatch):
@@ -38,7 +48,7 @@ def _configure_shared_smtp(monkeypatch):
 
 def test_email_registration_signin_and_logout(tmp_path, monkeypatch):
     _configure_shared_smtp(monkeypatch)
-    FakeSMTP.messages.clear()
+    _reset_fake_smtp()
     store = PlayerStats(tmp_path / "players.sqlite3")
     with patch("qwixx_ai.player_stats.smtplib.SMTP", FakeSMTP):
         assert store.request_code("Player@Example.com", "Player One")["sent"]
@@ -84,9 +94,33 @@ def test_email_requires_smtp_credentials(tmp_path, monkeypatch):
 
 def test_shared_smtp_settings_are_supported(tmp_path, monkeypatch):
     _configure_shared_smtp(monkeypatch)
-    FakeSMTP.messages.clear()
+    _reset_fake_smtp()
     store = PlayerStats(tmp_path / "shared.sqlite3")
     with patch("qwixx_ai.player_stats.smtplib.SMTP", FakeSMTP):
         assert store.request_code("player@example.com")["sent"]
+    assert FakeSMTP.connections == [("smtp.gmail.com", 587, 15)]
+    assert FakeSMTP.starttls_calls == 1
+    assert FakeSMTP.logins == [("sender@example.com", "test-app-password")]
+    assert FakeSMTP.messages[-1]["From"] == "sender@example.com"
+    store.db.close()
+
+
+def test_legacy_smtp_settings_do_not_override_shared_settings(tmp_path, monkeypatch):
+    _configure_shared_smtp(monkeypatch)
+    monkeypatch.setenv("QWIXX_SMTP_HOST", "wrong.example.com")
+    monkeypatch.setenv("QWIXX_SMTP_PORT", "465")
+    monkeypatch.setenv("QWIXX_SMTP_USER", "wrong@example.com")
+    monkeypatch.setenv("QWIXX_SMTP_PASSWORD", "wrong-password")
+    monkeypatch.setenv("QWIXX_SMTP_FROM", "wrong@example.com")
+    monkeypatch.setenv("QWIXX_SMTP_SSL", "true")
+    monkeypatch.setenv("GMAIL_ID", "wrong@gmail.com")
+    monkeypatch.setenv("GMAIL_TOKEN", "wrong-token")
+    _reset_fake_smtp()
+    store = PlayerStats(tmp_path / "legacy.sqlite3")
+    with patch("qwixx_ai.player_stats.smtplib.SMTP", FakeSMTP):
+        assert store.request_code("player@example.com")["sent"]
+    assert FakeSMTP.connections == [("smtp.gmail.com", 587, 15)]
+    assert FakeSMTP.starttls_calls == 1
+    assert FakeSMTP.logins == [("sender@example.com", "test-app-password")]
     assert FakeSMTP.messages[-1]["From"] == "sender@example.com"
     store.db.close()
