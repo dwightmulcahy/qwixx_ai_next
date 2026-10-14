@@ -23,3 +23,25 @@ Visit `http://YOUR_NAS_IP:8765` and click **Start browser training** on as many 
 - The Qwixx rules engine is experimental and has not been certified against all official edge cases.
 - The in-memory replay buffer is not durable; completed model checkpoints and metrics are persistent. A container restart clears replay experience.
 - The current trainer has no explicit CPU throttling other than PyTorch thread count and a short pause per rollout.
+
+## Training dashboard and account email
+
+Run `docker compose up -d --build` to start the **distributed** server.
+The standalone `python -m qwixx_ai.web` command is a local game-only server;
+it does not start central training or account statistics. Open
+`http://YOUR_NAS_IP:8765/training` for the training dashboard. The
+distributed server automatically starts its learner and central rollout
+workers unless training has been paused. Inspect `/api/stats` for
+`paused`, `uptime_seconds`, `central_games`, `browser_games`, and
+`updates`; compare counters a minute apart to confirm progress.
+
+For player sign-in emails, put SMTP credentials in a local `.env` file
+(do not commit it). Either use QWIXX_SMTP_HOST / QWIXX_SMTP_PORT /
+QWIXX_SMTP_USER / QWIXX_SMTP_PASSWORD / QWIXX_SMTP_FROM or the shared
+Logwatcher-style SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS values.
+The NoIP-style GMAIL_ID / GMAIL_TOKEN variables are also recognized
+(with smtp.gmail.com as default host). Explicit QWIXX settings take
+precedence. Use port 587 with STARTTLS or 465 with SSL. After changing
+the environment, recreate the container using
+`docker compose up -d --build --force-recreate`.
+Never post passwords, tokens, or full environment dumps in bug reports.
