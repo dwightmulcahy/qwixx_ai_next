@@ -1,5 +1,5 @@
 """Local play-versus-AI web UI, standard-library HTTP server."""
-import argparse,json,threading,os,html
+import argparse,json,threading,os,html,copy
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from .core import Game,COLORS,ORDER
 from .agents import heuristic,random_agent
@@ -40,6 +40,7 @@ let moving=false;async function act(a){if(moving||!state||state.done)return;if(s
 function selectMark(action){if(moving||!state||state.done)return;pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
 function confirmPhase(){if(pending)act(pending)}
+async function backToStep1(){if(moving||!state||state.done||!state.can_undo_step1)return;moving=true;try{const next=await api('/undo-step1',{session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false}}
 function skipPhase(){if(!state||state.done||moving)return;const strike=state.roller===0&&state.phase===state.boards.length&&state.active_marks===0;if(strike&&state.legal.length===0&&!window.confirm('No legal marks available. Skipping gives you a strike (−5 points). Continue?'))return;act(null)}
 const colors=['red','yellow','green','blue'],names=['Red','Yellow','Green','Blue'];
 const playerNames=['You','AI-Sir Rolls-a-Lot','AI-Dicey McDiceface','AI-Count von Qwixx'];
@@ -57,7 +58,7 @@ function render(){if(!state)return;
  const instruction=state.done?'Game over':whitePhase?'White dice: '+state.dice[0]+' + '+state.dice[1]+' = '+(state.dice[0]+state.dice[1])+'. Choose a highlighted number, or skip.':'As the roller, you may mark either white die plus a matching colored die.';
  const rollerLabel=youRoll?'YOU':roller;
  const turnHeader='<div class="roller-header"><span class="turn-count">TURN '+(state.turn+1)+'</span><span class="roller-name '+(youRoll?'human':'opponent')+'">'+rollerLabel+'</span><span class="roller-caption">'+(youRoll?'are rolling':'is rolling')+'</span></div>';
-  document.getElementById('status').innerHTML=turnHeader+'<p class="turn-subtitle">'+(whitePhase?'Step 1 · Everyone may mark the white-dice total':'Step 2 · Roller may use white + colored dice')+'</p><div class="dice-tray">'+state.dice.map((n,i)=>die(n,i<2?'white':colors[i-2],i<2?'White '+(i+1):names[i-2],i>=2&&(!youRoll||whitePhase||state.locks.includes(colors[i-2])))).join('')+'</div><div class="phase-controls"><strong>'+(whitePhase?'Step 1: White dice — everyone can mark':'Step 2: White + colored dice — roller only')+'</strong><p>'+instruction+'</p><p>'+(pending?'Selected: '+names[pending[0]]+' '+pending[1]:'Choose a highlighted number, or skip.')+'</p><button class="confirm" onclick="confirmPhase()" '+(!pending||moving?'disabled':'')+'>✓ Mark selected number</button><button onclick="clearSelection()" '+(!pending?'disabled':'')+'>Clear selection</button><button class="skip" onclick="skipPhase()">Skip opportunity →</button>'+(youRoll&&!whitePhase&&state.active_marks===0?'<p class="strike-warning">⚠ Skipping now gives you a strike (−5 points).</p>':youRoll&&whitePhase?'<p class="hint">A strike only occurs if you skip both opportunities on your roll.</p>' :'<p class="hint">No strike when you pass on another player’s roll.</p>')+'</div><p class="turn-info">Locked rows: '+(state.locks.join(', ')||'none')+' · Scores: '+state.scores.join(' / ')+'</p>';
+  document.getElementById('status').innerHTML=turnHeader+'<p class="turn-subtitle">'+(whitePhase?'Step 1 · Everyone may mark the white-dice total':'Step 2 · Roller may use white + colored dice')+'</p><div class="dice-tray">'+state.dice.map((n,i)=>die(n,i<2?'white':colors[i-2],i<2?'White '+(i+1):names[i-2],i>=2&&(!youRoll||whitePhase||state.locks.includes(colors[i-2])))).join('')+'</div><div class="phase-controls"><strong>'+(whitePhase?'Step 1: White dice — everyone can mark':'Step 2: White + colored dice — roller only')+'</strong><p>'+instruction+'</p><p>'+(pending?'Selected: '+names[pending[0]]+' '+pending[1]:'Choose a highlighted number, or skip.')+'</p><button class="confirm" onclick="confirmPhase()" '+(!pending||moving?'disabled':'')+'>✓ Mark selected number</button><button onclick="clearSelection()" '+(!pending?'disabled':'')+'>Clear selection</button><button class="skip" onclick="skipPhase()">Skip opportunity →</button>'+(state.can_undo_step1?'<button onclick="backToStep1()" '+(moving?'disabled':'')+'>← Back to Step 1</button>':'')+(youRoll&&!whitePhase&&state.active_marks===0?'<p class="strike-warning">⚠ Skipping now gives you a strike (−5 points).</p>':youRoll&&whitePhase?'<p class="hint">A strike only occurs if you skip both opportunities on your roll.</p>' :'<p class="hint">No strike when you pass on another player’s roll.</p>')+'</div><p class="turn-info">Locked rows: '+(state.locks.join(', ')||'none')+' · Scores: '+state.scores.join(' / ')+'</p>';
 
  document.getElementById('boards').innerHTML=state.boards.map(card).join('');
  const history=document.getElementById('game-history');
@@ -83,7 +84,7 @@ HTML = HTML.replace('id="app-version" style="font-size:.48em;color:#94a3b8;font-
 class Session:
     def __init__(self,model=None,difficulty='champion'):
         if difficulty not in ('beginner','intermediate','advanced','champion'):raise ValueError('Invalid difficulty')
-        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game();self.history=[]
+        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game();self.history=[];self.step1_snapshot=None
     def ai(self,g):
         if self.difficulty=='beginner':return random_agent(g)
         if self.difficulty=='intermediate':return heuristic(g)
@@ -99,9 +100,24 @@ class Session:
         entry={'turn':g.turn+1,'phase':g.phase,'actor':actor,
                'roller':g.active,'source':source,'action':list(action) if action is not None else None,
                'white_total':g.dice[0]+g.dice[1]}
+        if source=='human' and g.active==0 and g.phase==0:
+            self.step1_snapshot=(copy.deepcopy(g),copy.deepcopy(self.history))
+        elif source=='human' and g.active==0 and g.phase==g.n:
+            self.step1_snapshot=None
         g.step(action)
         self.history.append(entry)
         if len(self.history)>200:self.history=self.history[-200:]
+    def undo_step1(self):
+        if not self.can_undo_step1():raise ValueError('Step 1 cannot be undone now')
+        self.game,self.history=self.step1_snapshot
+        self.step1_snapshot=None
+
+    def can_undo_step1(self):
+        g=self.game
+        return (self.step1_snapshot is not None and not g.done and
+                g.active==0 and g.phase==g.n and
+                self.step1_snapshot[0].turn==g.turn)
+
     def advance(self):
         while not self.game.done and self.game.actor!=0:
             self.apply_action(self.ai(self.game),'ai')
@@ -117,7 +133,7 @@ class Session:
         return out
     def view(self):
         g=self.game
-        return {'turn':g.turn,'phase':g.phase,'actor':g.actor,'roller':g.active,'active_marks':g.active_marks,'dice':g.dice,'locks':[COLORS[c] for c in sorted(g.locks)],'done':g.done,'scores':g.scores(),'boards':[{'rows':b.rows,'penalties':b.penalties} for b in g.boards],'legal':g.legal() if not g.done else [],'difficulty':self.difficulty,'action_history':self.history[-25:],'explanations':self.explanations() if not g.done else []}
+        return {'turn':g.turn,'phase':g.phase,'actor':g.actor,'roller':g.active,'active_marks':g.active_marks,'can_undo_step1':self.can_undo_step1(),'dice':g.dice,'locks':[COLORS[c] for c in sorted(g.locks)],'done':g.done,'scores':g.scores(),'boards':[{'rows':b.rows,'penalties':b.penalties} for b in g.boards],'legal':g.legal() if not g.done else [],'difficulty':self.difficulty,'action_history':self.history[-25:],'explanations':self.explanations() if not g.done else []}
 
 def serve(host='127.0.0.1',port=8765,model_path=None):
     session=Session(load(model_path) if model_path else None)
@@ -129,7 +145,7 @@ def serve(host='127.0.0.1',port=8765,model_path=None):
             if self.path!='/':self.send_error(404);return
             body=HTML.encode();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
         def do_POST(self):
-            if self.path not in ('/reset','/move'):self.send_error(404);return
+            if self.path not in ('/reset','/move','/undo-step1'):self.send_error(404);return
             try:
                 length=int(self.headers.get('Content-Length','0'))
                 if length>10000:raise ValueError('Payload too large')
@@ -138,7 +154,10 @@ def serve(host='127.0.0.1',port=8765,model_path=None):
                     if self.path=='/reset':
                         difficulty=data.get('difficulty','champion')
                         if difficulty not in ('beginner','intermediate','advanced','champion'):raise ValueError('Invalid difficulty')
-                        session.difficulty=difficulty;session.game=Game();session.history=[];session.advance()
+                        session.difficulty=difficulty;session.game=Game();session.history=[];session.step1_snapshot=None;session.advance()
+                    elif self.path=='/undo-step1':
+                        if data.get('expected_turn')!=session.game.turn or data.get('expected_phase')!=session.game.phase:raise ValueError('Game state changed; reload')
+                        session.undo_step1()
                     else:
                         a=data.get('action');a=None if a is None else tuple(a)
                         session.apply_action(a,'human');session.advance()
