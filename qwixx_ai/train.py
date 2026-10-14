@@ -20,9 +20,9 @@ from .phase54 import select_checkpoint, exploration_rate, opponent_pool
 def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=(), learning_rate=None,
           eval_interval=None, rollback_patience=3, rollback_floor=0.22,
           phase52=False, promotion_alpha=0.05, phase53=False, phase54=False,
-          phase55=False, anchor_weight=0.05, update_every=4):
+          phase55=False, anchor_weight=0.05, update_every=4,\n          init_checkpoint=None, terminal_win_weight=1.0):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
-    if episodes < 1 or eval_games < 1 or target_interval < 1:
+    if terminal_win_weight < 0:\n        raise ValueError('terminal_win_weight must be nonnegative')\n    if init_checkpoint is not None and (champion_path is not None or warm_start):\n        raise ValueError('init_checkpoint is separate from champion/warm_start')\n    if episodes < 1 or eval_games < 1 or target_interval < 1:
         raise ValueError('episodes, eval_games and target_interval must be positive')
     if rollback_patience < 1 or not 0 <= rollback_floor <= 1:
         raise ValueError('invalid rollback settings')
@@ -34,7 +34,7 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         raise ValueError('learning_rate must be positive')
     folder=Path(out);folder.mkdir(parents=True,exist_ok=True)
     obs_size=observe(Game()).size;policy=network(obs_size);target=network(obs_size)
-    target.load_state_dict(policy.state_dict());opt=torch.optim.Adam(policy.parameters(),lr=lr)
+    if init_checkpoint is not None:\n        initial=load(init_checkpoint)\n        if initial[0].in_features != obs_size:\n            raise ValueError('Initial checkpoint has incompatible observations')\n        policy.load_state_dict(initial.state_dict())\n    target.load_state_dict(policy.state_dict());opt=torch.optim.Adam(policy.parameters(),lr=lr)
     replay=deque(maxlen=50000);priorities=deque(maxlen=50000);snapshots=[];best=-1;updates=0
     log=folder/'metrics.jsonl'
     champion=None
@@ -151,12 +151,12 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         if pending is not None:
             s,a,start,start_potential=pending
             final=shaped_reward((scores[learner]-start)/25,start_potential,0.0,True)
-            final+=terminal_reward(scores,learner)
+            final+=terminal_win_weight*terminal_reward(scores,learner)
             replay.append((s,a,final,observe(g),True,mask(g)))
             priorities.append(max(priorities,default=1.0))
         if (ep+1)%interval==0 or ep==episodes-1:
             policy.eval();result=evaluate(policy,eval_games,seed=100000)
-            row={'episode':ep+1,'epsilon':round(epsilon,4),**result}
+            row={'episode':ep+1,'epsilon':round(epsilon,4),\n                 'terminal_win_weight':terminal_win_weight,\n                 'init_checkpoint':str(init_checkpoint) if init_checkpoint else None,\n                 **result}
             with log.open('a') as f:f.write(json.dumps(row)+'\n')
             print(json.dumps(row),flush=True)
             if result['win_share']>best:
