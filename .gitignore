@@ -6,3 +6,4 @@ runs/
 *.pt
 
 .env
+qwixx_ai.egg-info/
