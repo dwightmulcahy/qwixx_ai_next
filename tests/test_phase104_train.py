@@ -47,3 +47,21 @@ def test_rejects_negative_objective_weight(tmp_path):
     with pytest.raises(SystemExit):
         main(["--candidate", str(checkpoint), "--variant", "win",
               "--relative-weight", "-1"])
+
+
+def test_stabilization_defaults_are_conservative(tmp_path, monkeypatch):
+    import qwixx_ai.phase104_train as module
+
+    checkpoint = tmp_path / "frozen.pt"
+    checkpoint.touch()
+    calls = []
+    monkeypatch.setattr(module, "train", lambda **kwargs: calls.append(kwargs))
+    assert main(["--candidate", str(checkpoint), "--variant", "win",
+                 "--out", str(tmp_path / "new_run")]) == 0
+    args = calls[0]
+    assert args["episodes"] == 250
+    assert args["learning_rate"] == 1e-5
+    assert args["finetune_anchor_weight"] == 0.2
+    assert args["competitive_rounds"] >= 2
+    assert args["competitive_patience"] == 2
+    assert args["eval_interval"] == 50
