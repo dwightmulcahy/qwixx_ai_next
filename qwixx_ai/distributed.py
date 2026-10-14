@@ -234,6 +234,18 @@ class Coordinator:
                 if session.game.done and player_id is not None:self.player_stats.record(sid,player_id,session.difficulty,session.game)
             self.sessions[sid]=(session,time.time(),player_id)
             return {'session_id':sid,**view}
+    def session_undo_step1(self,sid,expected_turn=None,expected_phase=None):
+        with self.lock:
+            entry=self.sessions.get(sid)
+            if not entry:raise ValueError('Session expired; start a new game')
+            session,_,player_id=entry
+            with session.lock:
+                if expected_turn is None or type(expected_turn) is not int or expected_turn!=session.game.turn:raise ValueError('Game state changed; reload')
+                if expected_phase is None or type(expected_phase) is not int or expected_phase!=session.game.phase:raise ValueError('Step already advanced; reload')
+                session.undo_step1()
+                view=session.view()
+            self.sessions[sid]=(session,time.time(),player_id)
+            return {'session_id':sid,**view}
     def policy_export(self):
         with self.lock:
             model=self.best_model or self.model;layers=[]
@@ -384,14 +396,15 @@ class Handler(BaseHTTPRequestHandler):
             except (smtplib.SMTPException,OSError):
                 logging.exception('Email verification SMTP delivery failed')
                 return self.reply({'error':'Email delivery failed. Check Gmail app password and SMTP connectivity.'},503)
-        if self.path in ('/reset','/move'):
+        if self.path in ('/reset','/move','/undo-step1'):
             try:
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
                 if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'),self.player_id())
                 else:
                     a=data.get('action');a=None if a is None else tuple(a);sid=data.get('session_id','');entry=self.coord.sessions.get(sid)
                     if entry and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
-                    result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
+                    if self.path=='/undo-step1':result=self.coord.session_undo_step1(sid,data.get('expected_turn'),data.get('expected_phase'))
+                    else:result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
                 return self.reply(result)
             except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
         if self.path!='/api/submit':self.send_error(404);return
