@@ -13,6 +13,7 @@ from .agents import heuristic,random_agent
 from .heuristic_v2 import heuristic_v2
 from .tournament import evaluate
 from .web import HTML as GAME_HTML, Session
+from .favicon import FAVICON_SVG
 from .player_stats import PlayerStats
 from .learning import potential, shaped_reward, terminal_reward
 
@@ -340,6 +341,7 @@ class Handler(BaseHTTPRequestHandler):
     def player_id(self):return self.coord.player_stats.authenticate(self.auth_token())
     def do_GET(self):
         try:
+            if self.path=='/favicon.svg':return self.reply(FAVICON_SVG,ctype='image/svg+xml')
             if self.path in ('/', '/training'):return self.reply(DASHBOARD_HTML,ctype='text/html; charset=utf-8')
             if self.path=='/worker.js':return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
             if self.path=='/health':return self.reply({'healthy':True})
