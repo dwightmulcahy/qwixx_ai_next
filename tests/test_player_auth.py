@@ -47,3 +47,32 @@ def test_email_requires_smtp(tmp_path,monkeypatch):
     with pytest.raises(RuntimeError,match="not configured"):
         store.request_code("person@example.com")
     store.db.close()
+
+
+def test_shared_smtp_settings_are_supported(tmp_path, monkeypatch):
+    for key in ("QWIXX_SMTP_HOST", "QWIXX_SMTP_FROM", "QWIXX_SMTP_USER",
+                "QWIXX_SMTP_PASSWORD", "QWIXX_SMTP_PORT"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "sender@example.com")
+    monkeypatch.setenv("SMTP_PASS", "test-app-password")
+    FakeSMTP.messages.clear()
+    store = PlayerStats(tmp_path / "shared.sqlite3")
+    with patch("qwixx_ai.player_stats.smtplib.SMTP", FakeSMTP):
+        assert store.request_code("player@example.com")["sent"]
+    assert FakeSMTP.messages[-1]["From"] == "sender@example.com"
+    store.db.close()
+
+
+def test_gmail_noip_settings_are_supported(tmp_path, monkeypatch):
+    for key in ("QWIXX_SMTP_HOST", "QWIXX_SMTP_FROM", "QWIXX_SMTP_USER",
+                "QWIXX_SMTP_PASSWORD", "QWIXX_SMTP_PORT", "SMTP_HOST",
+                "SMTP_USER", "SMTP_PASS", "SMTP_PORT"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("GMAIL_ID", "sender@gmail.com")
+    monkeypatch.setenv("GMAIL_TOKEN", "test-app-password")
+    store = PlayerStats(tmp_path / "gmail.sqlite3")
+    with patch("qwixx_ai.player_stats.smtplib.SMTP", FakeSMTP):
+        assert store.request_code("player@example.com")["sent"]
+    store.db.close()
