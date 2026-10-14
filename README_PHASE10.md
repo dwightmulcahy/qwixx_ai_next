@@ -42,3 +42,29 @@ python -m pytest -q
 
 Note: Phase 9.1 search simulations can make large evaluations slow. Run this
 offline rather than in the coordinator's checkpoint loop.
+
+
+## Git tag in the game heading
+
+The UI displays the Git tag beside **Qwixx AI**. It reads
+`QWIXX_GIT_VERSION` embedded at image build time, rather than depending on
+`.git` being present inside the running container.
+
+For Docker Compose, use the helper script from a Git checkout:
+
+```bash
+sh scripts/deploy-tagged.sh
+```
+
+The helper uses `git describe --tags --abbrev=0` to find the most recent
+reachable tag and passes it as a Docker build argument. It **does not create
+or change tags**. To use a specific tag instead, run:
+
+```bash
+QWIXX_GIT_VERSION=v1.2.3 sh scripts/deploy-tagged.sh
+```
+
+If no tag is available, the heading displays `dev`. Plain
+`docker compose up -d --build` also displays `dev` unless you set
+`QWIXX_GIT_VERSION` in the shell or Compose environment. For a standalone
+Python server, set `QWIXX_GIT_VERSION` before starting it.
