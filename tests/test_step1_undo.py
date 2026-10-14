@@ -1,12 +1,14 @@
 """Step 2 back navigation restores the complete Step 1 turn state."""
+import copy
+
 import pytest
 
-from qwixx_ai.web import Session, HTML
+from qwixx_ai.web import HTML, Session
 
 
 def test_back_restores_white_step_and_history():
     session = Session(difficulty="intermediate")
-    initial = session.view()
+    initial = copy.deepcopy(session.view())
     assert initial["phase"] == 0
     choice = session.game.legal()[0] if session.game.legal() else None
     session.apply_action(choice, "human")
