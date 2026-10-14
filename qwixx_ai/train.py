@@ -88,7 +88,7 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
     for ep in range(episodes):
         g=Game(seed=seed+ep)
         epsilon=(exploration_rate(ep, episodes) if phase54 else
-                 max(.05,.20-.15*ep/max(1,episodes*.9)) if warm_start
+                 max(.05,.20-.15*ep/max(1,episodes*.9)) if (warm_start or init_checkpoint is not None)
                  else max(.05,1-.95*ep/max(1,episodes*.95)))
         # One learner seat, rotated; opponents from current policy, frozen snapshots or baselines.
         learner=ep%4;opponents=[]
