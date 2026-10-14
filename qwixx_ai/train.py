@@ -99,6 +99,23 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         raise ValueError('--phase5 requires --champion')
     competitive_best=float('-inf')
     competitive_bad_checks=0
+    if competitive_rounds:
+        initial_fn=lambda game: choose(policy, game, epsilon=0)
+        initial_champion=paired_compare(
+            initial_fn, frozen_phase91, [heuristic_v2]*3,
+            rounds=competitive_rounds, seed=competitive_seed)
+        initial_v2=paired_compare(
+            initial_fn, heuristic_v2, [heuristic_v2]*3,
+            rounds=competitive_rounds, seed=competitive_seed+100000)
+        competitive_best=min(initial_champion['paired_advantage'],
+                             initial_v2['paired_advantage'])
+        save(policy, folder/'best_competitive.pt',
+             episode=0, competitive_score=competitive_best)
+        baseline_record={'episode':0, 'competitive_score':competitive_best,
+                         'versus_champion':initial_champion, 'versus_v2':initial_v2}
+        with log.open('a') as stream:
+            stream.write(json.dumps(baseline_record)+'\\n')
+        print(json.dumps(baseline_record), flush=True)
     for ep in range(episodes):
         g=Game(seed=seed+ep)
         epsilon=(exploration_rate(ep, episodes) if phase54 else
