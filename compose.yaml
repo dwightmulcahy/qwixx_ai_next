@@ -1,6 +1,9 @@
 services:
   qwixx:
-    build: .
+    build:
+      context: .
+      args:
+        QWIXX_GIT_VERSION: ${QWIXX_GIT_VERSION:-dev}
     image: qwixx-ai:distributed
     container_name: qwixx-ai
     restart: unless-stopped
