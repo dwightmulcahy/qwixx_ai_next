@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "8765:8765"
+    env_file:
+      - .env
     environment:
       TZ: America/Costa_Rica
       QWIXX_DATA: /app/runs
@@ -13,18 +15,6 @@ services:
       QWIXX_CENTRAL_WORKERS: "2"
       QWIXX_MAX_BROWSER_WORKERS: "2"
       PYTHONUNBUFFERED: "1"
-      QWIXX_SMTP_HOST: ${QWIXX_SMTP_HOST:-}
-      QWIXX_SMTP_PORT: ${QWIXX_SMTP_PORT:-}
-      QWIXX_SMTP_USER: ${QWIXX_SMTP_USER:-}
-      QWIXX_SMTP_PASSWORD: ${QWIXX_SMTP_PASSWORD:-}
-      QWIXX_SMTP_FROM: ${QWIXX_SMTP_FROM:-}
-      QWIXX_SMTP_SSL: ${QWIXX_SMTP_SSL:-false}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      GMAIL_ID: ${GMAIL_ID:-}
-      GMAIL_TOKEN: ${GMAIL_TOKEN:-}
       QWIXX_COOKIE_SECURE: ${QWIXX_COOKIE_SECURE:-false}
     volumes:
       - ./runs:/app/runs
