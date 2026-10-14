@@ -6,6 +6,7 @@ from .agents import heuristic,random_agent
 from .model import choose,load
 from .champion import champion
 from .heuristic_v2 import heuristic_v2
+from .favicon import FAVICON_SVG
 
 # Supplied by the image build; no Git repository is required at runtime.
 GIT_VERSION = os.getenv('QWIXX_GIT_VERSION', '').strip()
@@ -176,6 +177,8 @@ def serve(host='127.0.0.1',port=8765,model_path=None):
     session=Session(load(model_path) if model_path else None)
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            if self.path=='/favicon.svg':
+                body=FAVICON_SVG.encode();self.send_response(200);self.send_header('Content-Type','image/svg+xml');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             if self.path=='/training':
                 body=b'Training dashboard requires the distributed server: python -m qwixx_ai.distributed'
                 self.send_response(503);self.send_header('Content-Type','text/plain; charset=utf-8');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
