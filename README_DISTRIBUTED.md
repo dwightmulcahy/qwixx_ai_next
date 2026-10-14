@@ -35,13 +35,22 @@ workers unless training has been paused. Inspect `/api/stats` for
 `paused`, `uptime_seconds`, `central_games`, `browser_games`, and
 `updates`; compare counters a minute apart to confirm progress.
 
-For player sign-in emails, put SMTP credentials in a local `.env` file
-(do not commit it). Either use QWIXX_SMTP_HOST / QWIXX_SMTP_PORT /
-QWIXX_SMTP_USER / QWIXX_SMTP_PASSWORD / QWIXX_SMTP_FROM or the shared
-Logwatcher-style SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS values.
-The NoIP-style GMAIL_ID / GMAIL_TOKEN variables are also recognized
-(with smtp.gmail.com as default host). Explicit QWIXX settings take
-precedence. Use port 587 with STARTTLS or 465 with SSL. After changing
-the environment, recreate the container using
+For player sign-in emails, put the same shared SMTP settings used by
+Logwatcher in the local `.env` file beside `compose.yaml`:
+
+```dotenv
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your.gmail.addr.here@gmail.com
+SMTP_PASS=your-gmail-app-password
+```
+
+Compose loads that `.env` directly into the Qwixx container. Player
+email uses authenticated SMTP with STARTTLS on port 587; `SMTP_USER` is
+also the From address. For Gmail, use an App Password for `SMTP_PASS`,
+not the normal account password. Legacy `QWIXX_SMTP_*`, `GMAIL_ID`, and
+`GMAIL_TOKEN` values are not used for player-email delivery, avoiding a
+second credential layer that can silently override known-good settings.
+After changing `.env`, recreate the container using
 `docker compose up -d --build --force-recreate`.
 Never post passwords, tokens, or full environment dumps in bug reports.
