@@ -114,7 +114,7 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         baseline_record={'episode':0, 'competitive_score':competitive_best,
                          'versus_champion':initial_champion, 'versus_v2':initial_v2}
         with log.open('a') as stream:
-            stream.write(json.dumps(baseline_record)+'\\n')
+            stream.write(json.dumps(baseline_record)+'\n')
         print(json.dumps(baseline_record), flush=True)
     for ep in range(episodes):
         g=Game(seed=seed+ep)
@@ -233,7 +233,7 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                     'episode':ep+1, 'competitive_score':competitive_score,
                     'versus_champion':versus_champion, 'versus_v2':versus_v2}
                 with log.open('a') as f:
-                    f.write(json.dumps(competition)+'\\n')
+                    f.write(json.dumps(competition)+'\n')
                 print(json.dumps(competition),flush=True)
                 if competitive_score > competitive_best:
                     competitive_best=competitive_score
