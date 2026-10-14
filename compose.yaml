@@ -19,6 +19,12 @@ services:
       QWIXX_SMTP_PASSWORD: ${QWIXX_SMTP_PASSWORD:-}
       QWIXX_SMTP_FROM: ${QWIXX_SMTP_FROM:-}
       QWIXX_SMTP_SSL: ${QWIXX_SMTP_SSL:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      GMAIL_ID: ${GMAIL_ID:-}
+      GMAIL_TOKEN: ${GMAIL_TOKEN:-}
       QWIXX_COOKIE_SECURE: ${QWIXX_COOKIE_SECURE:-false}
     volumes:
       - ./runs:/app/runs
