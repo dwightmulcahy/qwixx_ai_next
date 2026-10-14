@@ -91,7 +91,29 @@ async function showStats(){
  }catch(e){panel.innerHTML='<h2>Player statistics</h2><p role="alert">Unable to load stats: '+escapeHtml(e.message)+'</p><button type="button" onclick="showStats()">Try again</button>';console.error('Player stats:',e)}
 }
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-let moving=false;async function act(a){if(moving||!state||state.done)return;moving=true;try{const next=await api('/move',{action:a,session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false}}
+let moving=false;function showNewPenalties(previous,next){
+ if(!previous||!next||!previous.boards||!next.boards)return;
+ const changes=next.boards.flatMap((board,i)=>{
+  const before=previous.boards[i]?.penalties||0;
+  return board.penalties>before?[{name:playerNames[i]||'Player '+(i+1),count:board.penalties-before}]:[];
+ });
+ if(!changes.length)return;
+ document.getElementById('penalty-modal')?.remove();
+ const overlay=document.createElement('div');
+ overlay.id='penalty-modal';overlay.className='game-over-overlay';
+ overlay.setAttribute('role','alertdialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Penalty awarded');
+ const dialog=document.createElement('div');dialog.className='game-over-dialog';
+ const title=document.createElement('h2');title.textContent='❌ Penalty!';
+ dialog.appendChild(title);
+ for(const change of changes){
+  const message=document.createElement('p');
+  message.textContent=change.name+' received '+change.count+' X'+(change.count===1?'':'s')+' (−'+(change.count*5)+' points).';
+  dialog.appendChild(message);
+ }
+ const button=document.createElement('button');button.textContent='Continue';button.onclick=()=>overlay.remove();
+ dialog.appendChild(button);overlay.appendChild(dialog);document.body.appendChild(overlay);button.focus();
+}
+async function act(a){if(moving||!state||state.done)return;moving=true;try{const previous=state;const next=await api('/move',{action:a,session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render();showNewPenalties(previous,next)}}finally{moving=false}}
 
 function selectMark(action){if(moving||!state||state.done)return;pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
