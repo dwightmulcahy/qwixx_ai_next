@@ -254,3 +254,24 @@ def test_player_stats_route_accepts_plain_url_and_filters():
 
     source = inspect.getsource(Handler.do_GET)
     assert "self.path=='/api/player-stats' or self.path.startswith('/api/player-stats?')" in source
+
+
+def test_game_tabs_are_present_and_preserve_game_nodes():
+    from qwixx_ai.web import HTML
+
+    for name in ("Play", "Account & Stats", "Move Analysis", "Training", "Rules & FAQ"):
+        assert name in HTML
+    for node in ("status", "boards", "actions", "auth-login", "career", "training-dashboard"):
+        assert node in HTML
+    assert "window.showTab=activate" in HTML
+    assert "activate('play')" in HTML
+    assert "panels.play.appendChild" in HTML
+
+
+def test_distributed_training_dashboard_remains_embedded():
+    from qwixx_ai.distributed import DASHBOARD_HTML
+
+    assert 'id="training-dashboard"' in DASHBOARD_HTML
+    assert 'id="trainingStats"' in DASHBOARD_HTML
+    assert 'id="trainingHistory"' in DASHBOARD_HTML
+    assert "window.showTab=activate" in DASHBOARD_HTML
