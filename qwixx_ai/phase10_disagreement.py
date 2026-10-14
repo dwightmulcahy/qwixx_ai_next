@@ -56,8 +56,9 @@ def audit(checkpoint, games=8, seed=1601000, futures=8, max_samples=30,
     if games < 1 or futures < 1 or max_samples < 0:
         raise ValueError("games and futures must be positive; max_samples >= 0")
     model = load(checkpoint)
-    counts = Counter()
-    by_seat = {str(i + 1): Counter() for i in range(4)}
+    counts = Counter({"decisions": 0, "disagreements": 0})
+    by_seat = {str(i + 1): Counter({"decisions": 0, "disagreements": 0})
+               for i in range(4)}
     samples = []
     for index in range(games):
         for seat in range(4):
