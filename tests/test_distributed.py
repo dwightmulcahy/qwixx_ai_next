@@ -293,3 +293,15 @@ def test_colorful_favicon_linked_and_available():
     assert FAVICON_SVG.startswith('<svg')
     for color in ('#ed3345', '#f8bd20', '#1ba45c', '#3178ed'):
         assert color in FAVICON_SVG
+
+
+def test_account_tab_unhides_career_and_displays_full_game_history():
+    from qwixx_ai.web import HTML
+
+    assert "panel.hidden=false;" in HTML
+    assert "if(id==='account'&&typeof showStats==='function')showStats()" in HTML
+    for field in ("Current win streak", "Longest win streak", "Highest score", "Lowest score",
+                  "All player scores", "Results by AI difficulty", "Recent completed games",
+                  "Average penalties", "Average turns", "Win rate"):
+        assert field in HTML
+    assert "/api/player-stats?limit=100" in HTML
