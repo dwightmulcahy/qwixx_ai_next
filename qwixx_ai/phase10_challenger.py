@@ -10,10 +10,11 @@ from pathlib import Path
 from .champion import champion
 from .controlled_strategy import paired_compare
 from .heuristic_v2 import heuristic_v2
+from .phase10_diagnostics import compare_diagnostics
 from .model import choose, load
 
 
-def evaluate_checkpoint(checkpoint, rounds=250, seed=1001000, confidence=0.95):
+def evaluate_checkpoint(checkpoint, rounds=250, seed=1001000, confidence=0.95, diagnostics=False):
     """Compare the candidate with Phase 9.1 and V2 under paired four-seat trials."""
     model = load(checkpoint)
 
@@ -36,7 +37,7 @@ def evaluate_checkpoint(checkpoint, rounds=250, seed=1001000, confidence=0.95):
         >= versus_champion["reference_mean_score"]
         and versus_v2["advantage_ci_low"] > 0
     )
-    return {
+    result = {
         "phase": 10,
         "candidate": str(checkpoint),
         "reference": "phase91_search (frozen)",
@@ -50,6 +51,15 @@ def evaluate_checkpoint(checkpoint, rounds=250, seed=1001000, confidence=0.95):
         "promoted": False,
         "note": "Exploratory evaluation; no automatic deployment or promotion.",
     }
+    if diagnostics:
+        result["diagnostics"] = {
+            "versus_champion": compare_diagnostics(
+                challenger, champion, [heuristic_v2] * 3, rounds, seed),
+            "versus_v2": compare_diagnostics(
+                challenger, heuristic_v2, [heuristic_v2] * 3,
+                rounds, seed + 100000),
+        }
+    return result
 
 
 def append_history(path, result):
@@ -67,6 +77,8 @@ def main(argv=None):
     parser.add_argument("--rounds", type=int, default=250)
     parser.add_argument("--seed", type=int, default=1001000)
     parser.add_argument("--confidence", type=float, default=0.95)
+    parser.add_argument("--diagnostics", action="store_true",
+                        help="Run additional per-seat, penalties, locks and outcome analysis")
     parser.add_argument("--history", type=Path, default=Path("runs/phase10_evaluations.jsonl"))
     args = parser.parse_args(argv)
     if args.rounds < 2:
@@ -75,7 +87,8 @@ def main(argv=None):
         parser.error("--confidence must be between 0 and 1")
     if not args.candidate.is_file():
         parser.error(f"checkpoint does not exist: {args.candidate}")
-    result = evaluate_checkpoint(args.candidate, args.rounds, args.seed, args.confidence)
+    result = evaluate_checkpoint(args.candidate, args.rounds, args.seed, args.confidence,
+                                 diagnostics=args.diagnostics)
     append_history(args.history, result)
     print(json.dumps(result, indent=2))
     return 0
