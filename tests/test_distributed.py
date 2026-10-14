@@ -316,3 +316,15 @@ def test_unavailable_white_total_skips_without_confirmation():
     assert "No legal marks available. Skipping gives you a strike" not in HTML
     assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
     assert "A strike only occurs if you skip both opportunities on your roll." in HTML
+
+
+def test_penalty_popup_identifies_players_and_point_loss():
+    from qwixx_ai.web import HTML
+
+    assert "function showNewPenalties(previous,next)" in HTML
+    assert "board.penalties>before" in HTML
+    assert "playerNames[i]||'Player '" in HTML
+    assert "change.name+' received '+change.count+' X'" in HTML
+    assert "' points).'" in HTML
+    assert "showNewPenalties(previous,next)" in HTML
+    assert "overlay.setAttribute('role','alertdialog')" in HTML
