@@ -67,3 +67,32 @@ def test_cli_saves_full_samples_but_prints_summary(tmp_path, monkeypatch, capsys
     assert main(["--candidate", str(checkpoint), "--output", str(output)]) == 0
     assert json.loads(output.read_text())["samples"] == [{"seat": 1}]
     assert "samples" not in json.loads(capsys.readouterr().out)
+
+
+def test_reservoir_sampling_is_reproducible_and_not_first_n(monkeypatch):
+    import qwixx_ai.phase10_disagreement as mod
+
+    monkeypatch.setattr(mod, "load", lambda _: object())
+    monkeypatch.setattr(mod, "choose", lambda model, game, epsilon: None)
+    monkeypatch.setattr(
+        mod, "champion",
+        lambda game: game.legal()[0] if game.legal() else None,
+    )
+    monkeypatch.setattr(
+        mod, "evaluate_actions",
+        lambda game, futures, seed: [
+            {"action": action, "win_share": 0.25, "mean_score": 30.0}
+            for action in [None, *game.legal()]
+        ],
+    )
+    args = {"games": 4, "seed": 42, "futures": 2,
+            "max_samples": 3, "sample_seed": 123}
+    first = audit("frozen.pt", **args)
+    again = audit("frozen.pt", **args)
+    assert first == again
+    assert first["sampling"] == "uniform_reservoir_without_replacement"
+    assert first["audited_samples"] == 3
+    assert first["counts"]["disagreements"] > 3
+    assert len({(x["game_seed"], x["seat"], x["turn"], x["phase"])
+                for x in first["samples"]}) == 3
+    assert sum(x["samples"] for x in first["counterfactual_by_category"].values()) == 3
