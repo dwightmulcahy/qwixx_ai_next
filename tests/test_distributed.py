@@ -245,3 +245,12 @@ def test_step_two_strike_prompt_only_when_no_legal_moves():
     from qwixx_ai.web import HTML
 
     assert "strike&&state.legal.length===0" in HTML
+
+
+def test_player_stats_route_accepts_plain_url_and_filters():
+    """Stats requests from the UI must work without a query string."""
+    import inspect
+    from qwixx_ai.distributed import Handler
+
+    source = inspect.getsource(Handler.do_GET)
+    assert "self.path=='/api/player-stats' or self.path.startswith('/api/player-stats?')" in source
