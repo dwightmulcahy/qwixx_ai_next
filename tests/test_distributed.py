@@ -275,3 +275,21 @@ def test_distributed_training_dashboard_remains_embedded():
     assert 'id="trainingStats"' in DASHBOARD_HTML
     assert 'id="trainingHistory"' in DASHBOARD_HTML
     assert "window.showTab=activate" in DASHBOARD_HTML
+
+
+def test_game_script_turn_controls_have_valid_concat():
+    from qwixx_ai.web import HTML
+
+    assert """+'</p>':'')+'<button class="confirm" """ in HTML
+    assert 'function render()' in HTML
+    assert 'async function reset()' in HTML
+
+
+def test_colorful_favicon_linked_and_available():
+    from qwixx_ai.favicon import FAVICON_SVG
+    from qwixx_ai.web import HTML
+
+    assert '<link rel="icon" href="/favicon.svg" type="image/svg+xml">' in HTML
+    assert FAVICON_SVG.startswith('<svg')
+    for color in ('#ed3345', '#f8bd20', '#1ba45c', '#3178ed'):
+        assert color in FAVICON_SVG
