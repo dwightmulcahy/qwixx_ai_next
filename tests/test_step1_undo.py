@@ -40,3 +40,15 @@ def test_back_button_and_api_present():
     assert "← Back to Step 1" in HTML
     assert "state.can_undo_step1" in HTML
     assert "/undo-step1" in HTML
+
+
+def test_back_button_not_disabled_by_in_flight_render():
+    # The move handler renders before its finally block resets moving=False.
+    # A legal undo must not inherit the transient moving flag as disabled HTML.
+    assert """'<button onclick="backToStep1()">← Back to Step 1</button>'""" in HTML
+    assert """(moving?'disabled':'')+'>← Back to Step 1""" not in HTML
+    assert "if(moving||!state||state.done||!state.can_undo_step1)return" in HTML
+
+
+def test_step2_roller_hint_distinguishes_own_roll():
+    assert "You already marked this roll, so skipping Step 2 has no penalty." in HTML
