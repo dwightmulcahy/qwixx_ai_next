@@ -241,10 +241,12 @@ def test_training_dashboard_link_and_status():
     assert "Training ${x.paused?'PAUSED':'ACTIVE'}" in DASHBOARD_HTML
 
 
-def test_step_two_strike_prompt_only_when_no_legal_moves():
+def test_step_two_strike_warning_is_inline_without_popup():
     from qwixx_ai.web import HTML
 
-    assert "strike&&state.legal.length===0" in HTML
+    assert "Skipping now gives you a strike (−5 points)." in HTML
+    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
+    assert "window.confirm('No legal marks available." not in HTML
 
 
 def test_player_stats_route_accepts_plain_url_and_filters():
