@@ -91,13 +91,13 @@ async function showStats(){
  }catch(e){panel.innerHTML='<h2>Player statistics</h2><p role="alert">Unable to load stats: '+escapeHtml(e.message)+'</p><button type="button" onclick="showStats()">Try again</button>';console.error('Player stats:',e)}
 }
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-let moving=false;async function act(a){if(moving||!state||state.done)return;if(state.phase<state.boards.length&&state.roller===0&&a===null&&state.legal.length===0&&!window.confirm('Pass on the white dice total '+(state.dice[0]+state.dice[1])+'? You can still use white + colored dice in Step 2. A strike only occurs if you also pass on Step 2.'))return;moving=true;try{const next=await api('/move',{action:a,session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false}}
+let moving=false;async function act(a){if(moving||!state||state.done)return;moving=true;try{const next=await api('/move',{action:a,session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false}}
 
 function selectMark(action){if(moving||!state||state.done)return;pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
 function confirmPhase(){if(pending)act(pending)}
 async function backToStep1(){if(moving||!state||state.done||!state.can_undo_step1)return;moving=true;try{const next=await api('/undo-step1',{session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false}}
-function skipPhase(){if(!state||state.done||moving)return;const strike=state.roller===0&&state.phase===state.boards.length&&state.active_marks===0;if(strike&&state.legal.length===0&&!window.confirm('No legal marks available. Skipping gives you a strike (−5 points). Continue?'))return;act(null)}
+function skipPhase(){if(!state||state.done||moving)return;act(null)}
 const colors=['red','yellow','green','blue'],names=['Red','Yellow','Green','Blue'];
 const playerNames=['You','AI-Sir Rolls-a-Lot','AI-Dicey McDiceface','AI-Count von Qwixx'];
 const pipPositions={1:[5],2:[1,9],3:[1,5,9],4:[1,3,7,9],5:[1,3,5,7,9],6:[1,3,4,6,7,9]};
