@@ -4,6 +4,8 @@ from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from .core import Game,COLORS,ORDER
 from .agents import heuristic,random_agent
 from .model import choose,load
+from .champion import champion
+from .heuristic_v2 import heuristic_v2
 
 HTML='''<!doctype html><html><head><meta charset="utf-8"><title>Qwixx AI</title><style>
 
@@ -80,8 +82,9 @@ class Session:
     def ai(self,g):
         if self.difficulty=='beginner':return random_agent(g)
         if self.difficulty=='intermediate':return heuristic(g)
-        if self.model is None:return heuristic(g)
-        return choose(self.model,g,epsilon=0.18 if self.difficulty=='advanced' else 0)
+        if self.difficulty=='champion':return champion(g)
+        if self.model is None:return heuristic_v2(g)
+        return choose(self.model,g,epsilon=0.18)
     def apply_action(self,action,source):
         g=self.game
         if g.done:raise ValueError('Game already finished')
