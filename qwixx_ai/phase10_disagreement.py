@@ -1,4 +1,4 @@
-"""Phase 10.2: frozen-checkpoint disagreement and counterfactual audit.
+"""Phase 10.3: randomized frozen-checkpoint disagreement audit.
 
 Sample real challenger trajectories, compare against frozen Phase 9.1, and
 estimate alternate outcomes with common seeded V2 continuations. Exploratory
@@ -133,7 +133,7 @@ def audit(checkpoint, games=8, seed=1601000, futures=32, max_samples=60,
                 x["estimated_score_delta"] for x in group) / len(group),
         }
     result = {
-        "phase": "10.2",
+        "phase": "10.3",
         "checkpoint": str(checkpoint),
         "games_per_seat": games,
         "seed": seed,
