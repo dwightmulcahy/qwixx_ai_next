@@ -128,7 +128,7 @@ class AdaptiveVerifiedPolicy:
         if result["override"]:
             self.stats["overrides"] += 1
             self.stats["by_seat"][str(seat)]["overrides"] += 1
-        if len(self.records) < self.log_limit:
+        if result["override"] or len(self.records) < self.log_limit:
             self.records.append({
                 "seat": seat, "turn": game.turn, "phase": game.phase,
                 "active": game.active + 1, "dice": list(game.dice),
