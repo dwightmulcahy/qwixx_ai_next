@@ -8,7 +8,7 @@ import math
 import random
 import time
 from pathlib import Path
-from statistics import NormalDist, mean, stdev
+from statistics import mean
 
 from .champion import champion
 from .controlled_strategy import paired_compare
@@ -18,16 +18,14 @@ from .model import choose, load
 from .phase9_search import outcome, state_seed
 
 
-def decision_summary(win_deltas, score_deltas, confidence, min_gain):
-    """Conservative two-sided normal interval; insufficient data means no override."""
+def decision_summary(win_deltas, score_deltas, confidence, min_gain, looks=4):
+    """Simultaneous Hoeffding bounds using a union bound across all looks.\n\n    Each paired win-share difference is in [-1, 1]. The resulting bounds\n    cover all scheduled looks with probability at least confidence.\n    """
     n = len(win_deltas)
     if n < 2:
         return {"win_gain": 0.0, "win_ci_low": float("-inf"),
                 "win_ci_high": float("inf"), "score_gain": 0.0,
                 "futures": n, "override": False}
-    avg = mean(win_deltas)
-    margin = NormalDist().inv_cdf((1 + confidence) / 2) * (
-        stdev(win_deltas) / math.sqrt(n))
+    if not 0 < confidence < 1 or looks < 1:\n        raise ValueError("invalid confidence or looks")\n    avg = mean(win_deltas)\n    margin = math.sqrt(2 * math.log(2 * looks / (1 - confidence)) / n)
     score_gain = mean(score_deltas)
     return {"win_gain": avg, "win_ci_low": avg - margin,
             "win_ci_high": avg + margin, "score_gain": score_gain,
@@ -53,7 +51,7 @@ def adaptive_evidence(game, baseline, alternative, *,
         return {"win_gain": 0.0, "win_ci_low": 0.0, "win_ci_high": 0.0,
                 "score_gain": 0.0, "futures": 0, "override": False,
                 "stop_reason": "same_action"}
-    rng = random.Random(state_seed(game, seed))
+    looks = 1 + math.ceil((max_futures - initial_futures) / batch_size)\n    rng = random.Random(state_seed(game, seed))
     wins, scores = [], []
     while len(wins) < max_futures:
         target = min(max_futures, initial_futures if not wins
@@ -64,7 +62,7 @@ def adaptive_evidence(game, baseline, alternative, *,
             bw, bs = outcome(game, baseline, future)
             wins.append(aw - bw)
             scores.append(ass - bs)
-        result = decision_summary(wins, scores, confidence, min_gain)
+        result = decision_summary(wins, scores, confidence, min_gain, looks)
         # Repeated peeking at ordinary CIs does not preserve nominal coverage.
         # These are exploratory stopping heuristics, not formal guarantees.
         if result["win_ci_low"] > min_gain and result["score_gain"] >= 0:
