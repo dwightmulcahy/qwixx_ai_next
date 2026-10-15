@@ -19,13 +19,20 @@ from .phase9_search import outcome, state_seed
 
 
 def decision_summary(win_deltas, score_deltas, confidence, min_gain, looks=4):
-    """Simultaneous Hoeffding bounds using a union bound across all looks.\n\n    Each paired win-share difference is in [-1, 1]. The resulting bounds\n    cover all scheduled looks with probability at least confidence.\n    """
+    """Simultaneous Hoeffding bounds using a union bound across all looks.
+
+    Each paired win-share difference is in [-1, 1]. The resulting bounds
+    cover all scheduled looks with probability at least confidence.
+    """
     n = len(win_deltas)
     if n < 2:
         return {"win_gain": 0.0, "win_ci_low": float("-inf"),
                 "win_ci_high": float("inf"), "score_gain": 0.0,
                 "futures": n, "override": False}
-    if not 0 < confidence < 1 or looks < 1:\n        raise ValueError("invalid confidence or looks")\n    avg = mean(win_deltas)\n    margin = math.sqrt(2 * math.log(2 * looks / (1 - confidence)) / n)
+    if not 0 < confidence < 1 or looks < 1:
+        raise ValueError("invalid confidence or looks")
+    avg = mean(win_deltas)
+    margin = math.sqrt(2 * math.log(2 * looks / (1 - confidence)) / n)
     score_gain = mean(score_deltas)
     return {"win_gain": avg, "win_ci_low": avg - margin,
             "win_ci_high": avg + margin, "score_gain": score_gain,
@@ -51,7 +58,8 @@ def adaptive_evidence(game, baseline, alternative, *,
         return {"win_gain": 0.0, "win_ci_low": 0.0, "win_ci_high": 0.0,
                 "score_gain": 0.0, "futures": 0, "override": False,
                 "stop_reason": "same_action"}
-    looks = 1 + math.ceil((max_futures - initial_futures) / batch_size)\n    rng = random.Random(state_seed(game, seed))
+    looks = 1 + math.ceil((max_futures - initial_futures) / batch_size)
+    rng = random.Random(state_seed(game, seed))
     wins, scores = [], []
     while len(wins) < max_futures:
         target = min(max_futures, initial_futures if not wins
@@ -204,7 +212,8 @@ def main(argv=None):
         min_gain=args.min_gain, confidence=args.confidence,
         seats=tuple(args.seats), log_limit=args.log_limit)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2) + "\n")
+    args.output.write_text(json.dumps(result, indent=2) + "
+")
     print(json.dumps({k: v for k, v in result.items()
                       if k != "decision_records"}, indent=2))
 
