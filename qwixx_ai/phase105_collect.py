@@ -28,6 +28,7 @@ def collect(checkpoint, games=30, seed=2401000, samples=200,
     for i in range(games):
         for seat in range(4):
             game = Game(seed=seed+i)
+            decision_index = 0
             while not game.done:
                 if game.actor != seat:
                     game.step(heuristic_v2(game))
@@ -42,7 +43,8 @@ def collect(checkpoint, games=30, seed=2401000, samples=200,
                     # Weighted reservoir: retain one entry per position.
                     # Higher priority for seats 2/3, without duplicating states.
                     key = rng.random() ** (1.0 / weight)
-                    item = (copy.deepcopy(game), seat, neural, reference)
+                    item = (copy.deepcopy(game), seat, neural, reference,
+                            seed + i, decision_index)
                     if len(reservoir) < samples:
                         reservoir.append((key, item))
                     else:
@@ -50,9 +52,11 @@ def collect(checkpoint, games=30, seed=2401000, samples=200,
                                     key=lambda j: reservoir[j][0])
                         if key > reservoir[worst][0]:
                             reservoir[worst] = (key, item)
+                decision_index += 1
                 game.step(neural)
     records = []
-    for index, (_, (game, seat, neural, reference)) in enumerate(reservoir):
+    for index, (_, (game, seat, neural, reference, game_seed,
+                   decision_index)) in enumerate(reservoir):
         estimates = evaluate_actions(game, futures=futures,
                                      seed=rollout_seed+index)
         by_action = {encode(item["action"]): item for item in estimates}
@@ -60,6 +64,8 @@ def collect(checkpoint, games=30, seed=2401000, samples=200,
         best = max(estimates, key=lambda item: item["win_share"])
         records.append({
             "observation": observe(game).tolist(),
+            "game_seed": game_seed,
+            "decision_index": decision_index,
             "seat": seat+1,
             "turn": game.turn,
             "neural_action": encode(neural),
@@ -73,7 +79,8 @@ def collect(checkpoint, games=30, seed=2401000, samples=200,
                 for item in estimates],
         })
     return {"phase": "10.5", "source": str(checkpoint),
-            "games_per_seat": games, "disagreements_seen": seen,
+            "games_per_seat": games, "game_seed": seed,
+            "disagreements_seen": seen,
             "futures": futures, "samples": records,
             "note": "Exploratory paired-seed V2 continuations; estimates are noisy."}
 
