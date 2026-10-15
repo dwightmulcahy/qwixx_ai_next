@@ -212,8 +212,7 @@ def main(argv=None):
         min_gain=args.min_gain, confidence=args.confidence,
         seats=tuple(args.seats), log_limit=args.log_limit)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2) + "
-")
+    args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({k: v for k, v in result.items()
                       if k != "decision_records"}, indent=2))
 
