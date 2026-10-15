@@ -24,6 +24,7 @@ def collect(checkpoint, games=30, seed=2401000, samples=200,
     rng = random.Random(sample_seed)
     reservoir = []
     seen = 0
+    weighted_seen = 0
     for i in range(games):
         for seat in range(4):
             game = Game(seed=seed+i)
@@ -37,17 +38,21 @@ def collect(checkpoint, games=30, seed=2401000, samples=200,
                     seen += 1
                     # Prioritize seats 2/3 without excluding other seats.
                     weight = 2 if seat in (1, 2) else 1
-                    for _ in range(weight):
-                        slot = len(reservoir) if len(reservoir) < samples else rng.randrange(seen * 2)
-                        if slot < samples:
-                            item = (copy.deepcopy(game), seat, neural, reference)
-                            if slot == len(reservoir):
-                                reservoir.append(item)
-                            else:
-                                reservoir[slot] = item
+                    weighted_seen += weight
+                    # Weighted reservoir: retain one entry per position.
+                    # Higher priority for seats 2/3, without duplicating states.
+                    key = rng.random() ** (1.0 / weight)
+                    item = (copy.deepcopy(game), seat, neural, reference)
+                    if len(reservoir) < samples:
+                        reservoir.append((key, item))
+                    else:
+                        worst = min(range(len(reservoir)),
+                                    key=lambda j: reservoir[j][0])
+                        if key > reservoir[worst][0]:
+                            reservoir[worst] = (key, item)
                 game.step(neural)
     records = []
-    for index, (game, seat, neural, reference) in enumerate(reservoir):
+    for index, (_, (game, seat, neural, reference)) in enumerate(reservoir):
         estimates = evaluate_actions(game, futures=futures,
                                      seed=rollout_seed+index)
         by_action = {encode(item["action"]): item for item in estimates}
