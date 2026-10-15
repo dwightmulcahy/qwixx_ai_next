@@ -109,6 +109,8 @@ class AdaptiveVerifiedPolicy:
                       "by_seat": {str(s): {"verified": 0, "overrides": 0}
                                   for s in range(1, 5)}}
 
+    evidence = staticmethod(adaptive_evidence)
+
     def __call__(self, game):
         self.stats["decisions"] += 1
         baseline = choose(self.model, game, epsilon=0)
@@ -120,7 +122,7 @@ class AdaptiveVerifiedPolicy:
             return baseline
         self.stats["disagreements"] += 1
         start = time.perf_counter()
-        result = adaptive_evidence(
+        result = self.evidence(
             game, baseline, alternative,
             initial_futures=self.initial_futures,
             max_futures=self.max_futures, batch_size=self.batch_size,
