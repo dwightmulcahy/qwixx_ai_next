@@ -46,8 +46,8 @@ def fit(dataset, output, min_gain=0.12, epochs=60, seed=20261015):
     torch.manual_seed(seed)
     records = json.loads(Path(dataset).read_text())["samples"]
     examples = prepare(records, min_gain=min_gain)
-    if len(examples) < 10:
-        raise ValueError("Insufficient confident corrections (need >= 10)")
+    if len(examples) < 50:
+        raise ValueError("Insufficient confident corrections (need >= 50); collect more evidence")
     x = torch.tensor(np.asarray([row[0] for row in examples]),
                      dtype=torch.float32)
     y = torch.tensor([row[1] for row in examples], dtype=torch.long)
@@ -68,7 +68,8 @@ def fit(dataset, output, min_gain=0.12, epochs=60, seed=20261015):
 
 
 def corrected_policy(base_checkpoint, correction_checkpoint,
-                     margin=1.5, seat_filter=(2, 3)):
+                     margin=1.5, seat_filter=(2, 3),
+                     enable_experimental_overrides=False):
     base = load(base_checkpoint)
     payload = torch.load(correction_checkpoint, map_location="cpu",
                          weights_only=True)
@@ -78,7 +79,7 @@ def corrected_policy(base_checkpoint, correction_checkpoint,
 
     def act(game):
         original = choose(base, game, epsilon=0)
-        if game.actor + 1 not in seat_filter:
+        if not enable_experimental_overrides or game.actor + 1 not in seat_filter:
             return original
         with torch.no_grad():
             logits = head(torch.from_numpy(observe(game)))
