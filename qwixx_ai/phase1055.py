@@ -162,7 +162,8 @@ def benchmark(checkpoint, rounds=100, seed=9501000, *,
             "mean_verification_seconds": (
                 st["verification_seconds"] / verified if verified else 0),
             "mean_futures": (
-                st["futures_used"] / verified if verified else max_futures),
+                st.get("futures_used", verified * max_futures) / verified
+                if verified else 0.0),
             "stops": st.get("stops", {}),
             "by_seat": st["by_seat"],
         }
