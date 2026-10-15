@@ -41,3 +41,25 @@ def test_holdout_is_reproducible():
 def test_invalid_config():
     with pytest.raises(ValueError):
         evidence(Game(seed=42), None, None, validation_futures=1)
+
+
+def test_benchmark_reports_fixed_policy_without_futures_used(monkeypatch):
+    from qwixx_ai import phase1055
+
+    class FakePolicy:
+        def __init__(self, *args, **kwargs):
+            self.stats = {
+                "verified": 2, "overrides": 0,
+                "verification_seconds": 0.1,
+                "by_seat": {},
+            }
+            self.records = []
+
+    def fake_compare(*args, **kwargs):
+        return {"paired_advantage": 0.0}
+
+    monkeypatch.setattr(phase1055, "ExperimentalPolicy", FakePolicy)
+    monkeypatch.setattr(phase1055, "VerifiedPolicy", FakePolicy)
+    monkeypatch.setattr(phase1055, "paired_compare", fake_compare)
+    result = phase1055.benchmark("unused.pt", rounds=2)
+    assert result["policy_stats"]["fixed64"]["mean_futures"] == 64
