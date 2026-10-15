@@ -12,7 +12,6 @@ from statistics import NormalDist, mean, stdev
 
 from .champion import champion
 from .controlled_strategy import paired_compare
-from .env import encode
 from .heuristic_v2 import heuristic_v2
 from .model import choose, load
 from .phase9_search import outcome, state_seed
