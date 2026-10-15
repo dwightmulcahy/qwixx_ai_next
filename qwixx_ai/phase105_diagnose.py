@@ -5,7 +5,6 @@ not train, change checkpoints, or promote a policy.
 """
 import argparse
 import json
-import math
 from pathlib import Path
 
 from .champion import champion
@@ -14,23 +13,6 @@ from .env import encode
 from .heuristic_v2 import heuristic_v2
 from .model import choose, load
 from .phase9_search import evaluate_actions
-
-
-def replay_states(checkpoint, games, seed):
-    """Recover states in the same order as the original collection."""
-    model = load(checkpoint)
-    for i in range(games):
-        for seat in range(4):
-            game = Game(seed=seed + i)
-            while not game.done:
-                if game.actor != seat:
-                    game.step(heuristic_v2(game))
-                    continue
-                neural = choose(model, game, epsilon=0)
-                reference = champion(game)
-                if neural != reference:
-                    yield game, seat + 1, encode(neural)
-                game.step(neural)
 
 
 def validate(dataset, checkpoint, futures=128, seed=3101000,
