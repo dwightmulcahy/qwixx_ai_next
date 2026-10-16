@@ -1,7 +1,6 @@
 """Tests for Phase 11.1 dataset partitioning and serialization."""
 import json
 
-import pytest
 
 from qwixx_ai.phase111 import split_for_game
 
