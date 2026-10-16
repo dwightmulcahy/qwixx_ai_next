@@ -14,12 +14,18 @@ from .core import Game
 from .env import encode, mask, observe
 from .heuristic_v2 import heuristic_v2
 from .model import choose, load
-from .phase111 import split_for_game
 from .phase9_search import evaluate_actions
+from .phase111 import split_for_game
 
 
 def stage(turn):
     return "early" if turn < 12 else "middle" if turn < 35 else "late"
+
+
+def relative_stage(turn, final_turn):
+    """Stage relative to observed game duration, avoiding near-empty late bins."""
+    fraction = turn / max(1, final_turn)
+    return "early" if fraction < 1 / 3 else "middle" if fraction < 2 / 3 else "late"
 
 
 def priority(seed, game_id, turn, phase, actor):
@@ -60,9 +66,11 @@ def collect(checkpoint, games=100, seed=11020001, max_records=2000,
     candidates = []
     totals = Counter()
     by_split = Counter()
+    game_lengths = []
     for game_id in range(games):
         game = Game(n=4, seed=seed + game_id)
         split = split_for_game(seed, game_id)
+        game_records = []
         while not game.done:
             actor = game.actor
             if actor in (1, 2):
@@ -72,7 +80,7 @@ def collect(checkpoint, games=100, seed=11020001, max_records=2000,
                 if neural != teacher:
                     totals["disagreements"] += 1
                     by_split[split] += 1
-                    candidates.append({
+                    game_records.append({
                         "game_id": game_id, "game_seed": seed + game_id,
                         "split": split, "stage": stage(game.turn),
                         "turn": game.turn, "phase": game.phase,
@@ -89,6 +97,10 @@ def collect(checkpoint, games=100, seed=11020001, max_records=2000,
                         "locks": sorted(game.locks),
                     })
             game.step(heuristic_v2(game))
+        game_lengths.append(game.turn)
+        for record in game_records:
+            record["stage"] = relative_stage(record["turn"], game.turn)
+        candidates.extend(game_records)
         totals["completed_games"] += 1
     selected = balanced_select(candidates, max_records)
     # Reconstruct exactly the V2 trajectory to recover states for search.
@@ -132,12 +144,16 @@ def collect(checkpoint, games=100, seed=11020001, max_records=2000,
         "saved_records": len(selected),
         "saved_by_split": dict(saved),
         "saved_by_stage": dict(stages),
+        "game_turns_min": min(game_lengths),
+        "game_turns_max": max(game_lengths),
+        "game_turns_mean": sum(game_lengths) / len(game_lengths),
+        "stage_definition": "early/middle/late thirds of each completed game",
         "disagreements_by_split": dict(by_split),
         "search_labeled": sum("search_targets" in r for r in selected),
         "search_futures": search_futures,
         "max_records": max_records,
         "split_rule": "SHA256(seed:game_id), game-level 80/10/10",
-        "sampling": "deterministic round-robin by split, stage, seat; "
+        "sampling": "deterministic round-robin by split, relative stage, seat; "
                     "SHA256 priorities within buckets",
         "note": "Teacher actions are not guaranteed optimal. Search estimates "
                 "use simulated V2 continuations. Train only on train split; "
