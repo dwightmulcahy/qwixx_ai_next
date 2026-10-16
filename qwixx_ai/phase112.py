@@ -6,7 +6,6 @@ No checkpoint changes or automatic promotion.
 import argparse
 import hashlib
 import json
-import random
 from collections import Counter, defaultdict
 from pathlib import Path
 
