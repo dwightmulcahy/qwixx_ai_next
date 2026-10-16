@@ -5,7 +5,6 @@ candidate actions. The focal player alone searches; simulated continuations
 use V2 for every seat. This is a search policy, not a trained checkpoint.
 """
 import argparse
-import copy
 import hashlib
 import json
 import random
@@ -30,7 +29,7 @@ def state_seed(game, seed):
 
 
 def outcome(game, action, future_seed):
-    trial = copy.deepcopy(game)
+    trial = game.clone()
     seat = trial.actor
     trial.rng = random.Random(future_seed)
     trial.step(action)
