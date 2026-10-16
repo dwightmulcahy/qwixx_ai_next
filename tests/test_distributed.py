@@ -241,7 +241,90 @@ def test_training_dashboard_link_and_status():
     assert "Training ${x.paused?'PAUSED':'ACTIVE'}" in DASHBOARD_HTML
 
 
-def test_step_two_strike_prompt_only_when_no_legal_moves():
+def test_step_two_strike_warning_is_inline_without_popup():
     from qwixx_ai.web import HTML
 
-    assert "strike&&state.legal.length===0" in HTML
+    assert "Skipping now gives you a strike (−5 points)." in HTML
+    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
+    assert "window.confirm('No legal marks available." not in HTML
+
+
+def test_player_stats_route_accepts_plain_url_and_filters():
+    """Stats requests from the UI must work without a query string."""
+    import inspect
+    from qwixx_ai.distributed import Handler
+
+    source = inspect.getsource(Handler.do_GET)
+    assert "self.path=='/api/player-stats' or self.path.startswith('/api/player-stats?')" in source
+
+
+def test_game_tabs_are_present_and_preserve_game_nodes():
+    from qwixx_ai.web import HTML
+
+    for name in ("Play", "Account & Stats", "Move Analysis", "Training", "Rules & FAQ"):
+        assert name in HTML
+    for node in ("status", "boards", "actions", "auth-login", "career", "training-dashboard"):
+        assert node in HTML
+    assert "window.showTab=activate" in HTML
+    assert "activate('play')" in HTML
+    assert "panels.play.appendChild" in HTML
+
+
+def test_distributed_training_dashboard_remains_embedded():
+    from qwixx_ai.distributed import DASHBOARD_HTML
+
+    assert 'id="training-dashboard"' in DASHBOARD_HTML
+    assert 'id="trainingStats"' in DASHBOARD_HTML
+    assert 'id="trainingHistory"' in DASHBOARD_HTML
+    assert "window.showTab=activate" in DASHBOARD_HTML
+
+
+def test_game_script_turn_controls_have_valid_concat():
+    from qwixx_ai.web import HTML
+
+    assert """+'</p>':'')+'<button class="confirm" """ in HTML
+    assert 'function render()' in HTML
+    assert 'async function reset()' in HTML
+
+
+def test_colorful_favicon_linked_and_available():
+    from qwixx_ai.favicon import FAVICON_SVG
+    from qwixx_ai.web import HTML
+
+    assert '<link rel="icon" href="/favicon.svg" type="image/svg+xml">' in HTML
+    assert FAVICON_SVG.startswith('<svg')
+    for color in ('#ed3345', '#f8bd20', '#1ba45c', '#3178ed'):
+        assert color in FAVICON_SVG
+
+
+def test_account_tab_unhides_career_and_displays_full_game_history():
+    from qwixx_ai.web import HTML
+
+    assert "panel.hidden=false;" in HTML
+    assert "if(id==='account'&&typeof showStats==='function')showStats()" in HTML
+    for field in ("Current win streak", "Longest win streak", "Highest score", "Lowest score",
+                  "All player scores", "Results by AI difficulty", "Recent completed games",
+                  "Average penalties", "Average turns", "Win rate"):
+        assert field in HTML
+    assert "/api/player-stats?limit=100" in HTML
+
+
+def test_unavailable_white_total_skips_without_confirmation():
+    from qwixx_ai.web import HTML
+
+    assert "Pass on the white dice total" not in HTML
+    assert "No legal marks available. Skipping gives you a strike" not in HTML
+    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
+    assert "A strike only occurs if you skip both opportunities on your roll." in HTML
+
+
+def test_penalty_popup_identifies_players_and_point_loss():
+    from qwixx_ai.web import HTML
+
+    assert "function showNewPenalties(previous,next)" in HTML
+    assert "board.penalties>before" in HTML
+    assert "playerNames[i]||'Player '" in HTML
+    assert "change.name+' received '+change.count+' X'" in HTML
+    assert "' points).'" in HTML
+    assert "showNewPenalties(previous,next)" in HTML
+    assert "overlay.setAttribute('role','alertdialog')" in HTML
