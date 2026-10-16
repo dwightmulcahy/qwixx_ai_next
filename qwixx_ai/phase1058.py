@@ -5,14 +5,12 @@ All results are exploratory. No automatic champion promotion.
 import argparse
 import copy
 import json
-import random
 import time
 from pathlib import Path
 
 from .core import Game
 from .heuristic_v2 import heuristic_v2
 from .phase1057 import analyze, collect_states
-from .phase9_search import outcome, state_seed
 
 
 def clone_benchmark(seed=10580001, samples=1000):
