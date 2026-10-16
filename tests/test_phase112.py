@@ -1,5 +1,5 @@
 """Phase 11.2 deterministic balancing and optional target tests."""
-from qwixx_ai.phase112 import balanced_select, priority, stage
+from qwixx_ai.phase112 import balanced_select, priority, relative_stage, stage
 
 
 def test_stage_boundaries():
@@ -37,3 +37,17 @@ def test_balancing_rejects_invalid_limit():
         pass
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_relative_stage_uses_completed_game_length():
+    assert relative_stage(0, 24) == "early"
+    assert relative_stage(7, 24) == "early"
+    assert relative_stage(8, 24) == "middle"
+    assert relative_stage(15, 24) == "middle"
+    assert relative_stage(16, 24) == "late"
+    assert relative_stage(23, 24) == "late"
+
+
+def test_relative_stage_handles_short_games():
+    assert relative_stage(0, 0) == "early"
+    assert relative_stage(1, 1) == "late"
