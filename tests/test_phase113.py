@@ -1,6 +1,7 @@
 """Phase 11.3 dataset safety and supervised-loss tests."""
 import json
 
+import numpy as np
 import pytest
 import torch
 
@@ -45,7 +46,7 @@ def test_rejects_illegal_teacher(tmp_path):
 def test_loss_is_finite():
     model = torch.nn.Linear(2, 89)
     records = [example("train", 1)]
-    records[0]["observation"] = __import__("numpy").array(
+    records[0]["observation"] = np.array(
         records[0]["observation"], dtype="float32")
     loss = batch_loss(model, records, "cpu", 0.25)
     assert torch.isfinite(loss)
