@@ -1,7 +1,6 @@
 """Clone equivalence and rollout performance regression checks."""
 import copy
 import random
-import time
 
 from qwixx_ai.core import Game
 from qwixx_ai.heuristic_v2 import heuristic_v2
