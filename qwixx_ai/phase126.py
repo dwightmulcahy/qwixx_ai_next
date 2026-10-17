@@ -87,6 +87,7 @@ def evaluate(model, bonuses, games, seed):
 def run(checkpoint, bonuses=(0.0, 0.05, 0.1, 0.2, 0.4),
         tune_games=80, eval_games=160, tune_seed=12060001,
         eval_seed=12070001):
+    bonuses = tuple(float(b) for b in bonuses)
     if len(set(bonuses)) != len(bonuses) or 0.0 not in bonuses or any(b < 0 for b in bonuses):
         raise ValueError("bonuses must be distinct, nonnegative and include 0")
     if tune_games < 1 or eval_games < 1:
@@ -130,7 +131,7 @@ def run(checkpoint, bonuses=(0.0, 0.05, 0.1, 0.2, 0.4),
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--checkpoint", type=Path, required=True)
-    p.add_argument("--bonuses", type=float, nargs="+", default=[0, 0.05, 0.1, 0.2, 0.4])
+    p.add_argument("--bonuses", type=float, nargs="+", default=[0.0, 0.05, 0.1, 0.2, 0.4])
     p.add_argument("--tune-games", type=int, default=80)
     p.add_argument("--eval-games", type=int, default=160)
     p.add_argument("--tune-seed", type=int, default=12060001)
