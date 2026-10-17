@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   lint:
-    name: Ruff correctness
+    name: Ruff / Pyflakes correctness
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -20,7 +20,8 @@ jobs:
           python-version: '3.11'
           cache: pip
       - run: python -m pip install -e '.[dev]'
-      - run: ruff check qwixx_ai tests
+      - name: Ruff lint (including Pyflakes F rules)
+        run: python -m ruff check --select F qwixx_ai tests scripts
   rules:
     name: Rules / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
