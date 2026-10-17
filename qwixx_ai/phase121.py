@@ -5,7 +5,7 @@ No model training, rollout labels, or promotion.
 """
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from statistics import mean
 
