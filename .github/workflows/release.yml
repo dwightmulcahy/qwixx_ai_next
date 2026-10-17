@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   actions: read
+  checks: read
 
 concurrency:
   group: release-${{ github.event_name == 'push' && github.ref_name || inputs.version }}
@@ -60,10 +61,17 @@ jobs:
           SHA: ${{ steps.verify.outputs.sha }}
         run: |
           set -euo pipefail
-          conclusion=$(gh api "/repos/$REPO/actions/runs?head_sha=$SHA&event=push&status=completed&per_page=100" \
+          conclusion=$(gh api "/repos/$REPO/actions/runs?head_sha=$SHA&status=completed&per_page=100" \
             --jq '[.workflow_runs[] | select(.name=="CI") | .conclusion][0] // "missing"')
-          echo "CI for $SHA: $conclusion"
-          test "$conclusion" = success
+          echo "CI workflow for $SHA: $conclusion"
+          if [ "$conclusion" = success ]; then
+            exit 0
+          fi
+
+          check_conclusion=$(gh api "/repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select(.name=="CI gate") | .conclusion][0] // "missing"')
+          echo "CI gate check for $SHA: $check_conclusion"
+          test "$check_conclusion" = success
 
       - name: Generate grouped conventional-commit changelog
         env:
