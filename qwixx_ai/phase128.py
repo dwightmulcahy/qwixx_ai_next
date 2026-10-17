@@ -7,7 +7,6 @@ import argparse
 import json
 import math
 from pathlib import Path
-from statistics import NormalDist, mean, stdev
 
 import torch
 
@@ -48,8 +47,7 @@ def hybrid(model, threshold, stats=None):
 def paired(model, threshold, rounds, seed):
     stats = {"decisions": 0, "fallbacks": 0, "changed": 0}
     candidate = hybrid(model, threshold, stats)
-    baseline = hybrid(model, -0.0)
-    # For threshold=0, ties can still trigger fallback; use a true neural baseline.
+    # Use a true neural baseline; zero-margin ties must not trigger fallback.
     baseline = lambda game: neural_decision(model, game)[0]
     result = paired_compare(
         candidate, baseline, [heuristic_v2] * 3,
