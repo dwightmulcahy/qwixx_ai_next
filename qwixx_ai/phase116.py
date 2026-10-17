@@ -8,16 +8,13 @@ import json
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
-import torch
-
 from .champion import champion
 from .core import Game
 from .env import encode, mask, observe
 from .heuristic_v2 import heuristic_v2
 from .model import choose, load
 from .phase111 import split_for_game
-from .phase112 import balanced_select, priority, relative_stage
+from .phase112 import priority, relative_stage
 from .phase115 import train as anchored_train
 
 
@@ -142,6 +139,11 @@ def main(argv=None):
             args.dataset, args.checkpoint, args.output, epochs=args.epochs,
             seed=args.seed, learning_rate=args.learning_rate,
             anchor_weight=args.anchor_weight, teacher_weight=args.teacher_weight)
+        report["phase"] = "11.6"
+        report["note"] = ("Representative-state anchored experiment; independent "
+                          "paired tournament required. No automatic promotion.")
+        args.output.with_suffix(".training.json").write_text(
+            json.dumps(report, indent=2) + "\n")
         print(json.dumps({k: v for k, v in report.items() if k != "history"},
                          indent=2))
 
