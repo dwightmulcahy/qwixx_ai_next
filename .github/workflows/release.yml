@@ -29,8 +29,13 @@ jobs:
           VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
         run: |
           set -euo pipefail
-          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || exit 1
+          [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Expected stable existing tag vMAJOR.MINOR.PATCH'; exit 1; }
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
+          numeric="${VERSION#v}"
+          echo "major=${numeric%%.*}" >> "$GITHUB_OUTPUT"
+          remainder="${numeric#*.}"
+          echo "minor=${remainder%%.*}" >> "$GITHUB_OUTPUT"
+          echo "patch=${remainder#*.}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         with:
@@ -93,13 +98,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Publish tagged Docker Hub image
+      - name: Publish versioned Docker Hub image
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.tag }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}.${{ steps.version.outputs.patch }}
           provenance: false
 
       - name: Create GitHub Release with grouped changelog
