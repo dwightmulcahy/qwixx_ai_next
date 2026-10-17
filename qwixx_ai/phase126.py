@@ -98,7 +98,7 @@ def run(checkpoint, bonuses=(0.0, 0.05, 0.1, 0.2, 0.4),
     # Select by win share; use mean score margin as deterministic tie-breaker.
     winner = max(bonuses, key=lambda b: (
         tuning[str(b)]["win_share"], tuning[str(b)]["mean_score_margin"], -b))
-    evaluation, evaluation_rows = evaluate(model, (0.0, winner) if winner else (0.0,),
+    evaluation, evaluation_rows = evaluate(model, (0.0, winner) if winner != 0.0 else (0.0,),
                                            eval_games, eval_seed)
     baseline = evaluation["0.0"]
     selected = evaluation[str(winner)]
