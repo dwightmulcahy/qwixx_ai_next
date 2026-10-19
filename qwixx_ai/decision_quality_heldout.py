@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .champion import champion
+from .champion import phase91_champion
 from .controlled_strategy import paired_compare
 from .decision_quality import policy
 from .heuristic_v2 import heuristic_v2
@@ -36,7 +36,7 @@ def evaluate(rounds=100, seed=HELDOUT_SEED):
     learned = policy(FROZEN_WEIGHTS, FROZEN_MARGIN)
 
     def candidate(game):
-        baseline = champion(game)
+        baseline = phase91_champion(game)
         chosen = learned(game)
         stats["decisions"] += 1
         if chosen != baseline:
@@ -47,7 +47,7 @@ def evaluate(rounds=100, seed=HELDOUT_SEED):
         return chosen
 
     comparison = paired_compare(
-        candidate, champion, [heuristic_v2] * 3, rounds=rounds, seed=seed
+        candidate, phase91_champion, [heuristic_v2] * 3, rounds=rounds, seed=seed
     )
     stats["override_rate"] = (
         stats["overrides"] / stats["decisions"] if stats["decisions"] else 0
