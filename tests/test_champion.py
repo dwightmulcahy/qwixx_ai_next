@@ -1,6 +1,6 @@
-"""Frozen champion regression checks."""
+"""Champion and Phase 9.1 regression checks."""
 from qwixx_ai import champion as champion_module
-from qwixx_ai.champion import SETTINGS, champion
+from qwixx_ai.champion import SETTINGS, champion, phase91_champion
 from qwixx_ai.core import Game
 from qwixx_ai.heuristic_v2 import heuristic_v2
 from qwixx_ai.web import Session
@@ -21,7 +21,7 @@ def test_champion_uses_v2_for_non_four_player_games():
 def test_champion_routes_four_player_policy(monkeypatch):
     game = Game(seed=4)
     monkeypatch.setattr(champion_module, "_search", lambda g: ("called", g.n))
-    assert champion(game) == ("called", 4)
+    assert phase91_champion(game) == ("called", 4)\n    monkeypatch.setattr(\n        champion_module, "row_change_only",\n        lambda g, incumbent: ("hybrid", incumbent),\n    )\n    assert champion(game) == ("hybrid", ("called", 4))
 
 
 def test_web_champion_routes_promoted_policy(monkeypatch):
