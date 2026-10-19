@@ -6,7 +6,6 @@ meeting win-share and score safeguards against the frozen incumbent.
 """
 import argparse
 import json
-import math
 import random
 import time
 from pathlib import Path
