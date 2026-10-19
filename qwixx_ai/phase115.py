@@ -13,7 +13,6 @@ import numpy as np
 import torch
 from torch import nn
 
-from .env import ACTION_COUNT
 from .model import load
 from .phase113 import read_dataset
 
