@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .champion import champion
+from .champion import phase91_champion
 from .controlled_strategy import paired_compare
 from .core import Game, ORDER
 from .heuristic_v2 import heuristic_v2, probability
@@ -45,7 +45,7 @@ def collect(games=30, seed=20000000, max_states=120, futures=128):
         while not game.done:
             if len(game.legal()) >= 2:
                 teacher = heuristic_v2(game)
-                if teacher != champion(game) or 12 <= game.turn < 35:
+                if teacher != phase91_champion(game) or 12 <= game.turn < 35:
                     candidates.append((game_id, game.clone()))
             game.step(heuristic_v2(game))
     random.Random(seed).shuffle(candidates)
@@ -94,7 +94,7 @@ def policy(weights, margin=0.02):
     if margin < 0:
         raise ValueError("margin must be nonnegative")
     def act(game):
-        incumbent = champion(game)
+        incumbent = phase91_champion(game)
         actions = [None, *game.legal()]
         values = {a: float(np.dot(weights, features(game, a)))
                   for a in actions}
@@ -113,7 +113,7 @@ def experiment(games=30, states=120, futures=128, rounds=12,
                          max(12, states // 4), futures)
     weights = fit(train, ridge)
     comparison = paired_compare(
-        policy(weights, margin), champion, [heuristic_v2] * 3,
+        policy(weights, margin), phase91_champion, [heuristic_v2] * 3,
         rounds=rounds, seed=test_seed)
     return {"weights": weights, "training": diagnose(train, weights),
             "validation": diagnose(validation, weights),
