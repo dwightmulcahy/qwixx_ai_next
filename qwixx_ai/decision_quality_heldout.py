@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .champion import champion
 from .controlled_strategy import paired_compare
-from .decision_quality import features, policy
+from .decision_quality import policy
 from .heuristic_v2 import heuristic_v2
 
 FROZEN_WEIGHTS = (
