@@ -100,8 +100,9 @@ def test_strike_when_roller_passes_both_phases_even_if_legal_moves_exist():
     assert game.boards[0].penalties == 1
 
 
-def test_white_dice_skip_confirmation_requires_no_legal_move():
-    assert "a===null&&state.legal.length===0&&!window.confirm(" in HTML
+def test_white_dice_skip_has_no_confirmation():
+    assert "Pass on the white dice total" not in HTML
+    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
 
 
 def test_training_rate_limit_is_separate_from_general_limit():

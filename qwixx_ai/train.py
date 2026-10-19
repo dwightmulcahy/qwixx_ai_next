@@ -16,12 +16,30 @@ from .phase5 import evaluate_promotion
 from .phase52 import evaluate_promotion as evaluate_promotion_v52
 from .phase53 import evaluate_promotion as evaluate_promotion_v53
 from .phase54 import select_checkpoint, exploration_rate, opponent_pool
+from .controlled_strategy import paired_compare
+from .champion import champion as frozen_phase91
+from .heuristic_v2 import heuristic_v2
 
 def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, champion_path=None, promotion_games=1000, warm_start=False, phase5=False, historical_paths=(), learning_rate=None,
           eval_interval=None, rollback_patience=3, rollback_floor=0.22,
           phase52=False, promotion_alpha=0.05, phase53=False, phase54=False,
-          phase55=False, anchor_weight=0.05, update_every=4):
+          phase55=False, anchor_weight=0.05, update_every=4,
+          init_checkpoint=None, terminal_win_weight=1.0, relative_score_weight=0.0,
+          finetune_anchor_weight=0.0, competitive_rounds=0,
+          competitive_patience=2, competitive_seed=2101000):
     random.seed(seed);np.random.seed(seed);torch.manual_seed(seed)
+    if finetune_anchor_weight < 0 or competitive_rounds < 0 or competitive_patience < 1:
+        raise ValueError('invalid fine-tuning safeguards')
+    if competitive_rounds == 1:
+        raise ValueError('competitive_rounds must be zero or at least two')
+    if competitive_rounds and init_checkpoint is None:
+        raise ValueError('competitive selection requires init_checkpoint')
+    if relative_score_weight < 0:
+        raise ValueError('relative_score_weight must be nonnegative')
+    if terminal_win_weight < 0:
+        raise ValueError('terminal_win_weight must be nonnegative')
+    if init_checkpoint is not None and (champion_path is not None or warm_start):
+        raise ValueError('init_checkpoint is separate from champion/warm_start')
     if episodes < 1 or eval_games < 1 or target_interval < 1:
         raise ValueError('episodes, eval_games and target_interval must be positive')
     if rollback_patience < 1 or not 0 <= rollback_floor <= 1:
@@ -34,7 +52,13 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         raise ValueError('learning_rate must be positive')
     folder=Path(out);folder.mkdir(parents=True,exist_ok=True)
     obs_size=observe(Game()).size;policy=network(obs_size);target=network(obs_size)
+    if init_checkpoint is not None:
+        initial=load(init_checkpoint)
+        if initial[0].in_features != obs_size:
+            raise ValueError('Initial checkpoint has incompatible observations')
+        policy.load_state_dict(initial.state_dict())
     target.load_state_dict(policy.state_dict());opt=torch.optim.Adam(policy.parameters(),lr=lr)
+    finetune_anchor=freeze(policy) if init_checkpoint is not None else None
     replay=deque(maxlen=50000);priorities=deque(maxlen=50000);snapshots=[];best=-1;updates=0
     log=folder/'metrics.jsonl'
     champion=None
@@ -73,10 +97,29 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         raise ValueError('--phase52 requires --phase5')
     if phase5 and champion is None:
         raise ValueError('--phase5 requires --champion')
+    competitive_best=float('-inf')
+    competitive_bad_checks=0
+    if competitive_rounds:
+        initial_fn=lambda game: choose(policy, game, epsilon=0)
+        initial_champion=paired_compare(
+            initial_fn, frozen_phase91, [heuristic_v2]*3,
+            rounds=competitive_rounds, seed=competitive_seed)
+        initial_v2=paired_compare(
+            initial_fn, heuristic_v2, [heuristic_v2]*3,
+            rounds=competitive_rounds, seed=competitive_seed+100000)
+        competitive_best=min(initial_champion['paired_advantage'],
+                             initial_v2['paired_advantage'])
+        save(policy, folder/'best_competitive.pt',
+             episode=0, competitive_score=competitive_best)
+        baseline_record={'episode':0, 'competitive_score':competitive_best,
+                         'versus_champion':initial_champion, 'versus_v2':initial_v2}
+        with log.open('a') as stream:
+            stream.write(json.dumps(baseline_record)+'\n')
+        print(json.dumps(baseline_record), flush=True)
     for ep in range(episodes):
         g=Game(seed=seed+ep)
         epsilon=(exploration_rate(ep, episodes) if phase54 else
-                 max(.05,.20-.15*ep/max(1,episodes*.9)) if warm_start
+                 max(.05,.20-.15*ep/max(1,episodes*.9)) if (warm_start or init_checkpoint is not None)
                  else max(.05,1-.95*ep/max(1,episodes*.95)))
         # One learner seat, rotated; opponents from current policy, frozen snapshots or baselines.
         learner=ep%4;opponents=[]
@@ -136,6 +179,12 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
                 importance/=importance.max()
                 individual_losses=nn.functional.smooth_l1_loss(q,expected,reduction='none')
                 loss=(individual_losses*torch.tensor(importance,dtype=torch.float32)).mean()
+                if finetune_anchor is not None and finetune_anchor_weight:
+                    with torch.no_grad():
+                        frozen_values=finetune_anchor(torch.tensor(np.stack(ss)))
+                    current_values=policy(torch.tensor(np.stack(ss)))
+                    loss=loss+finetune_anchor_weight*nn.functional.smooth_l1_loss(
+                        current_values, frozen_values)
                 if phase55:
                     with torch.no_grad():
                         anchor_q=anchor(torch.tensor(np.stack(ss)))
@@ -151,17 +200,53 @@ def train(episodes=2000,seed=42,out='runs',eval_games=80, target_interval=1000, 
         if pending is not None:
             s,a,start,start_potential=pending
             final=shaped_reward((scores[learner]-start)/25,start_potential,0.0,True)
-            final+=terminal_reward(scores,learner)
+            final+=terminal_win_weight*terminal_reward(scores,learner)
+            opponent_best=max(score for i,score in enumerate(scores) if i!=learner)
+            final+=relative_score_weight*max(-1.0,min(1.0,
+                (scores[learner]-opponent_best)/25.0))
             replay.append((s,a,final,observe(g),True,mask(g)))
             priorities.append(max(priorities,default=1.0))
         if (ep+1)%interval==0 or ep==episodes-1:
             policy.eval();result=evaluate(policy,eval_games,seed=100000)
-            row={'episode':ep+1,'epsilon':round(epsilon,4),**result}
+            row={'episode':ep+1,'epsilon':round(epsilon,4),
+                 'terminal_win_weight':terminal_win_weight,
+                 'relative_score_weight':relative_score_weight,
+                 'init_checkpoint':str(init_checkpoint) if init_checkpoint else None,
+                 **result}
             with log.open('a') as f:f.write(json.dumps(row)+'\n')
             print(json.dumps(row),flush=True)
             if result['win_share']>best:
                 best=result['win_share'];save(policy,folder/'best.pt',episode=ep+1,win_share=best)
             save(policy,folder/'latest.pt',episode=ep+1)
+            if competitive_rounds:
+                policy_fn=lambda game: choose(policy, game, epsilon=0)
+                versus_champion=paired_compare(
+                    policy_fn, frozen_phase91, [heuristic_v2]*3,
+                    rounds=competitive_rounds, seed=competitive_seed)
+                versus_v2=paired_compare(
+                    policy_fn, heuristic_v2, [heuristic_v2]*3,
+                    rounds=competitive_rounds, seed=competitive_seed+100000)
+                competitive_score=min(
+                    versus_champion['paired_advantage'],
+                    versus_v2['paired_advantage'])
+                competition={
+                    'episode':ep+1, 'competitive_score':competitive_score,
+                    'versus_champion':versus_champion, 'versus_v2':versus_v2}
+                with log.open('a') as f:
+                    f.write(json.dumps(competition)+'\n')
+                print(json.dumps(competition),flush=True)
+                if competitive_score > competitive_best:
+                    competitive_best=competitive_score
+                    competitive_bad_checks=0
+                    save(policy,folder/'best_competitive.pt',
+                         episode=ep+1,competitive_score=competitive_score)
+                else:
+                    competitive_bad_checks+=1
+                if competitive_bad_checks >= competitive_patience:
+                    print(json.dumps({'episode':ep+1, 'early_stop':True,
+                                      'reason':'competitive performance did not improve'}),
+                          flush=True)
+                    return best
             if champion is not None:
                 if phase54:
                     duel=select_checkpoint(

@@ -25,6 +25,28 @@ class Game:
     def __init__(self,n=4,seed=None):
         if not 2<=n<=5:raise ValueError('2–5 players supported')
         self.n=n;self.rng=random.Random(seed);self.reset()
+    def clone(self):
+        """Independent copy of the complete game state, including RNG state.
+
+        Unlike deepcopy, this copies only the known mutable game fields.
+        Do not use if Game gains new mutable state without updating this method.
+        """
+        other = object.__new__(Game)
+        other.n = self.n
+        other.rng = random.Random()
+        other.rng.setstate(self.rng.getstate())
+        other.boards = [Board(rows=[row.copy() for row in board.rows],
+                              penalties=board.penalties)
+                        for board in self.boards]
+        other.locks = self.locks.copy()
+        other.active = self.active
+        other.phase = self.phase
+        other.turn = self.turn
+        other.active_marks = self.active_marks
+        other.white_locks = self.white_locks.copy()
+        other.dice = self.dice
+        return other
+
     def reset(self):
         self.boards=[Board() for _ in range(self.n)];self.locks=set();self.active=0
         self.phase=0;self.turn=0;self.active_marks=0;self.white_locks=set();self._roll();return self
