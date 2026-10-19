@@ -6,9 +6,9 @@ import argparse
 import json
 from pathlib import Path
 
-from .champion import champion
+from .champion import phase91_champion
 from .controlled_strategy import paired_compare
-from .decision_disagreement_audit import model_choice
+from .frozen_row_policy import model_choice
 from .heuristic_v2 import heuristic_v2
 
 DEFAULT_SEED = 26000000
@@ -30,7 +30,7 @@ def evaluate(rounds=100, seed=DEFAULT_SEED):
              "blocked_pass_to_mark": 0, "blocked_other": 0}
 
     def challenger(game):
-        incumbent = champion(game)
+        incumbent = phase91_champion(game)
         proposed = model_choice(game, incumbent)
         chosen = row_change_only_from_choices(incumbent, proposed)
         stats["decisions"] += 1
@@ -44,7 +44,7 @@ def evaluate(rounds=100, seed=DEFAULT_SEED):
         return chosen
 
     result = paired_compare(
-        challenger, champion, [heuristic_v2] * 3,
+        challenger, phase91_champion, [heuristic_v2] * 3,
         rounds=rounds, seed=seed
     )
     stats["override_rate"] = (
