@@ -9,10 +9,9 @@ import random
 from collections import defaultdict
 from pathlib import Path
 
-from .champion import champion
+from .champion import phase91_champion
 from .core import Game
-from .decision_quality import features
-from .decision_quality_heldout import FROZEN_MARGIN, FROZEN_WEIGHTS
+from .frozen_row_policy import model_choice
 from .heuristic_v2 import heuristic_v2
 from .phase9_search import evaluate_actions
 
@@ -29,18 +28,6 @@ def classify(before, after):
     return "same_row"
 
 
-def model_choice(game, incumbent):
-    actions = [None, *game.legal()]
-    values = {
-        action: sum(weight * value for weight, value in zip(
-            FROZEN_WEIGHTS, features(game, action)))
-        for action in actions
-    }
-    chosen = max(actions, key=lambda action: values[action])
-    return (chosen if values[chosen] > values[incumbent] + FROZEN_MARGIN
-            else incumbent)
-
-
 def collect_overrides(games=40, seed=24000000, limit=120):
     if games < 1 or limit < 1:
         raise ValueError("games and limit must be positive")
@@ -51,7 +38,7 @@ def collect_overrides(games=40, seed=24000000, limit=120):
         while not game.done:
             # Reproduce a fixed V2-generated state distribution; this is not
             # the distribution of states visited by the learned candidate.
-            incumbent = champion(game)
+            incumbent = phase91_champion(game)
             chosen = model_choice(game, incumbent)
             if chosen != incumbent:
                 category = classify(incumbent, chosen)
