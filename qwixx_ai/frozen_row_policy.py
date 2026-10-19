@@ -1,6 +1,4 @@
 """Frozen row-only model, independent of the champion entrypoint."""
-from .decision_quality import features
-
 WEIGHTS = (
     7.316526290373287e-34, 0.0, 9.190012946650607e-34, 0.0, 0.0,
     -0.020710467226715008, 0.05338450113214413,
@@ -13,6 +11,8 @@ MARGIN = 0.02
 
 
 def model_choice(game, incumbent):
+    from .decision_quality import features
+
     actions = [None, *game.legal()]
     values = {
         action: sum(weight * value for weight, value in zip(
