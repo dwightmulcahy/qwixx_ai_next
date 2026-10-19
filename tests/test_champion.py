@@ -21,7 +21,12 @@ def test_champion_uses_v2_for_non_four_player_games():
 def test_champion_routes_four_player_policy(monkeypatch):
     game = Game(seed=4)
     monkeypatch.setattr(champion_module, "_search", lambda g: ("called", g.n))
-    assert phase91_champion(game) == ("called", 4)\n    monkeypatch.setattr(\n        champion_module, "row_change_only",\n        lambda g, incumbent: ("hybrid", incumbent),\n    )\n    assert champion(game) == ("hybrid", ("called", 4))
+    assert phase91_champion(game) == ("called", 4)
+    monkeypatch.setattr(
+        champion_module, "row_change_only",
+        lambda g, incumbent: ("hybrid", incumbent),
+    )
+    assert champion(game) == ("hybrid", ("called", 4))
 
 
 def test_web_champion_routes_promoted_policy(monkeypatch):
