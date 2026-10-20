@@ -134,7 +134,8 @@ assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\\(\\)" disabled/)
     game = tmp_path / "game.js"
     script.write_text(runner, encoding="utf-8")
     game.write_text(game_script, encoding="utf-8")
-    subprocess.run(
-        [node, str(script), str(game)], check=True, capture_output=True,
-        text=True,
+    result = subprocess.run(
+        [node, str(script), str(game)], capture_output=True,
+        text=True, check=False,
     )
+    assert result.returncode == 0, result.stderr or result.stdout
