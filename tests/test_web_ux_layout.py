@@ -124,11 +124,11 @@ assert.match(el('boards').innerHTML,/confirmPhase\(\)" disabled/);
 vm.runInContext('state.phase=4;state.roller=0;',context);
 vm.runInContext('render()',context);
 assert.match(el('boards').innerHTML,/Pass — take strike/);
-assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\\(\\)" disabled/);
+assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
 vm.runInContext("moving=true;render()",context);
-assert.match(el("boards").innerHTML,/onclick="skipPhase\\(\\)" disabled/);
+assert.match(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
 vm.runInContext("moving=false;render()",context);
-assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\\(\\)" disabled/);
+assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
 """
     script = tmp_path / "ux_check.js"
     game = tmp_path / "game.js"
