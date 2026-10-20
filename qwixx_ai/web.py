@@ -55,6 +55,24 @@ html[data-theme="light"] .phase-controls button:not(.confirm){background:var(--c
 html[data-theme="light"] .app-tabs button,html[data-theme="light"] .game-toolbar button{color:var(--text)}
 html[data-theme="light"] .app-tabs button[aria-selected="true"]{background:var(--cell)}
 html[data-theme="light"] .career-stat{background:var(--cell)}
+
+/* Align the dice with the human card; opponents start at the same height. */
+#status{display:none}
+.dice-status{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin:0 0 12px}
+.dice-status .roller-header{margin:0 0 4px}.dice-status .dice-tray{margin:8px 0 4px}
+.game-grid{align-items:start}
+.mini-row{border-radius:5px;padding:3px;background:var(--row-color)}
+.mini-row.red{--row-color:var(--qw-red)}
+.mini-row.yellow{--row-color:var(--qw-yellow)}
+.mini-row.green{--row-color:var(--qw-green)}
+.mini-row.blue{--row-color:var(--qw-blue)}
+.mini-number{background:var(--panel);color:var(--text);border-color:color-mix(in srgb,var(--row-color) 55%,var(--border))}
+.mini-number.marked{background:color-mix(in srgb,var(--row-color) 78%,#101827);border-color:var(--row-color);color:#fff}
+.mini-row.yellow .mini-number.marked{color:#fff}
+.number-cell.skipped .number-label{text-decoration:none}
+.number-cell.skipped:after,.mini-number.skipped:after{content:'';position:absolute;left:3px;right:3px;top:50%;height:3px;background:currentColor;transform:translateY(-50%);pointer-events:none;border-radius:3px;opacity:.9}
+.mini-number.skipped{text-decoration:none;opacity:.8}
+.mini-number.skipped:after{height:2px;left:1px;right:1px}
 @media(max-width:980px){.game-grid{grid-template-columns:1fr}.opponents-column{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-card{padding:7px}.mini-row{grid-template-columns:repeat(11,minmax(0,1fr)) 15px;gap:1px}.mini-number{font-size:9px;min-height:21px}.mini-header{font-size:12px}}
 @media(max-width:640px){.opponents-column{grid-template-columns:1fr}.mini-number{font-size:12px}.human-column .score-row{min-width:470px}.theme-picker{margin-left:0}.game-toolbar{flex-wrap:wrap}}
 </style></head><body><h1>Qwixx AI <small id="app-version" style="font-size:.48em;color:#94a3b8;font-weight:600"></small></h1><p><a href="/training">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a highlighted number on your scorecard, or skip a phase.</p>
@@ -160,12 +178,12 @@ let moving=false;function showNewPenalties(previous,next){
  const button=document.createElement('button');button.textContent='Continue';button.onclick=()=>overlay.remove();
  dialog.appendChild(button);overlay.appendChild(dialog);document.body.appendChild(overlay);button.focus();
 }
-async function act(a){if(moving||!state||state.done)return;moving=true;try{const previous=state;const next=await api('/move',{action:a,session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render();showNewPenalties(previous,next)}}finally{moving=false}}
+async function act(a){if(moving||!state||state.done)return;moving=true;try{const previous=state;const next=await api('/move',{action:a,session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render();showNewPenalties(previous,next)}}finally{moving=false;if(state)render()}}
 
 function selectMark(action){if(moving||!state||state.done)return;pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
 function confirmPhase(){if(pending)act(pending)}
-async function backToStep1(){if(moving||!state||state.done||!state.can_undo_step1)return;moving=true;try{const next=await api('/undo-step1',{session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false}}
+async function backToStep1(){if(moving||!state||state.done||!state.can_undo_step1)return;moving=true;try{const next=await api('/undo-step1',{session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false;if(state)render()}}
 function skipPhase(){if(!state||state.done||moving)return;act(null)}
 const colors=['red','yellow','green','blue'],names=['Red','Yellow','Green','Blue'];
 const playerNames=['You','AI-Sir Rolls-a-Lot','AI-Dicey McDiceface','AI-Count von Qwixx'];
@@ -196,9 +214,9 @@ function render(){if(!state)return;
  const rollerLabel=youRoll?'YOU':roller;
  const turnHeader='<div class="roller-header"><span class="turn-count">TURN '+(state.turn+1)+'</span><span class="roller-name '+(youRoll?'human':'opponent')+'">'+rollerLabel+'</span><span class="roller-caption">'+(youRoll?'are rolling':'is rolling')+'</span></div>';
   const diceHtml=turnHeader+'<p class="turn-subtitle">'+(whitePhase?'Step 1 · Everyone may mark the white-dice total':'Step 2 · Roller may use white + colored dice')+'</p><div class="dice-tray">'+state.dice.map((n,i)=>die(n,i<2?'white':colors[i-2],i<2?'White '+(i+1):names[i-2],i>=2&&(!youRoll||whitePhase||state.locks.includes(colors[i-2])))).join('')+'</div>';
- document.getElementById('status').innerHTML=diceHtml;
+ document.getElementById('status').innerHTML='';
  const controls='<div class="phase-controls" aria-label="Your move"><p class="phase-instruction">'+instruction+'</p>'+(pending?'<p class="selected-mark">Selected: '+names[pending[0]]+' '+pending[1]+'</p>':'')+'<button class="confirm" onclick="confirmPhase()" '+(!pending||moving||state.done?'disabled':'')+'>✓ Mark selected number</button><button onclick="clearSelection()" '+(!pending?'disabled':'')+'>Clear selection</button><button class="skip" onclick="skipPhase()" '+(moving||state.done?'disabled':'')+'>'+(youRoll&&!whitePhase&&state.active_marks===0?'Pass — take strike':'Pass →')+'</button>'+(state.can_undo_step1?'<button onclick="backToStep1()">← Back to Step 1</button>':'')+(youRoll&&!whitePhase&&state.active_marks===0?'<p class="strike-warning">⚠ Passing now gives you a strike (−5 points).</p>':youRoll&&whitePhase?'<p class="hint">A strike only occurs if you pass both opportunities on your roll.</p>':youRoll?'<p class="hint">You already marked this roll, so passing Step 2 has no penalty.</p>':'<p class="hint">No strike when you pass on another player’s roll.</p>')+'</div>';
- document.getElementById('boards').innerHTML='<div class="game-grid"><div class="human-column">'+card(state.boards[0],0)+controls+'</div><aside class="opponents-column" aria-label="AI opponents">'+state.boards.slice(1).map((board,j)=>miniCard(board,j+1)).join('')+'</aside></div>';
+ document.getElementById('boards').innerHTML='<div class="game-grid"><div class="human-column"><div class="dice-status">'+diceHtml+'</div>'+card(state.boards[0],0)+controls+'</div><aside class="opponents-column" aria-label="AI opponents">'+state.boards.slice(1).map((board,j)=>miniCard(board,j+1)).join('')+'</aside></div>';
  const history=document.getElementById('game-history');
  if(history){const actions=state.action_history||[];history.textContent=actions.length?actions.slice(-12).map(e=>'Turn '+e.turn+' · '+(e.phase<state.boards.length?'Step 1':'Step 2')+' · '+(e.source==='human'?'You':'AI '+e.actor)+' · '+(e.action?names[e.action[0]]+' '+e.action[1]:'Passed')+' · whites '+e.white_total).join('\\n'):'No moves recorded yet';}
  const choices=state.legal.map(a=>{const c=a[0],n=a[1],details=state.explanations.find(x=>x.move===colors[c]+' '+n),sources=whitePhase?'white '+state.dice[0]+' + white '+state.dice[1]:[0,1].filter(w=>state.dice[w]+state.dice[c+2]===n).map(w=>'white '+(w+1)+' ('+state.dice[w]+') + '+colors[c]+' ('+state.dice[c+2]+')').join(' OR ');return '<li><strong>'+names[c]+' '+n+(a[2]?' 🔒':'')+'</strong> — '+sources+(details?' · +'+details.immediate+' immediate points · skips '+details.skipped:'')+'</li>'}).join('');
