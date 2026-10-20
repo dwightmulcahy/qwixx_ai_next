@@ -51,4 +51,4 @@ def test_back_button_not_disabled_by_in_flight_render():
 
 
 def test_step2_roller_hint_distinguishes_own_roll():
-    assert "You already marked this roll, so skipping Step 2 has no penalty." in HTML
+    assert "You already marked this roll, so passing Step 2 has no penalty." in HTML
