@@ -244,7 +244,7 @@ def test_training_dashboard_link_and_status():
 def test_step_two_strike_warning_is_inline_without_popup():
     from qwixx_ai.web import HTML
 
-    assert "Skipping now gives you a strike (−5 points)." in HTML
+    assert "Passing now gives you a strike (−5 points)." in HTML
     assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
     assert "window.confirm('No legal marks available." not in HTML
 
@@ -315,7 +315,7 @@ def test_unavailable_white_total_skips_without_confirmation():
     assert "Pass on the white dice total" not in HTML
     assert "No legal marks available. Skipping gives you a strike" not in HTML
     assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
-    assert "A strike only occurs if you skip both opportunities on your roll." in HTML
+    assert "A strike only occurs if you pass both opportunities on your roll." in HTML
 
 
 def test_penalty_popup_identifies_players_and_point_loss():
