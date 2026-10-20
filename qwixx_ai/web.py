@@ -202,7 +202,7 @@ function miniCard(board,i){
  board.rows.forEach((row,c)=>{
   const nums=c<2?[2,3,4,5,6,7,8,9,10,11,12]:[12,11,10,9,8,7,6,5,4,3,2];
   const last=row.length?nums.indexOf(row[row.length-1]):-1,locked=state.locks.includes(colors[c]);
-  b+='<div class="mini-row '+colors[c]+'" aria-label="'+names[c]+' row'+(locked?' locked':'')+'">';
+  b+='<div class="mini-row '+colors[c]+(locked?' mini-row-locked':'')+'" aria-label="'+names[c]+' row'+(locked?' locked':'')+'">';
   b+=nums.map((n,j)=>'<span class="mini-number'+(row.includes(n)?' marked':j<last?' skipped':'')+'" aria-label="'+names[c]+' '+n+(row.includes(n)?' marked':j<last?' skipped':' available')+'">'+n+'</span>').join('');
   b+='<span class="mini-lock" aria-label="'+names[c]+(locked?' locked':' unlocked')+'">'+(locked?'🔒':'')+'</span>'+(locked?'<span class="mini-locked-label" aria-hidden="true">🔒 LOCKED</span>':'')+'</div>';
  });
