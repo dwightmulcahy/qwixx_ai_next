@@ -73,6 +73,8 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .number-cell.skipped:after,.mini-number.skipped:after{content:'';position:absolute;left:3px;right:3px;top:50%;height:3px;background:currentColor;transform:translateY(-50%);pointer-events:none;border-radius:3px;opacity:.9}
 .mini-number.skipped{text-decoration:none;opacity:.8}
 .mini-number.skipped:after{height:2px;left:1px;right:1px}
+.mini-row-locked{position:relative;outline:2px solid #aab8cc;outline-offset:-2px;filter:saturate(.5)}
+.mini-locked-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;background:#101b2e;color:#fff;border:1px solid #d1dae8;border-radius:4px;padding:2px 9px;font-size:11px;font-weight:800;letter-spacing:.08em;white-space:nowrap;pointer-events:none;box-shadow:0 1px 5px #0008}
 @media(max-width:980px){.game-grid{grid-template-columns:1fr}.opponents-column{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-card{padding:7px}.mini-row{grid-template-columns:repeat(11,minmax(0,1fr)) 15px;gap:1px}.mini-number{font-size:9px;min-height:21px}.mini-header{font-size:12px}}
 @media(max-width:640px){.opponents-column{grid-template-columns:1fr}.mini-number{font-size:12px}.human-column .score-row{min-width:470px}.theme-picker{margin-left:0}.game-toolbar{flex-wrap:wrap}}
 </style></head><body><h1>Qwixx AI <small id="app-version" style="font-size:.48em;color:#94a3b8;font-weight:600"></small></h1><p><a href="/training">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a highlighted number on your scorecard, or skip a phase.</p>
@@ -202,7 +204,7 @@ function miniCard(board,i){
   const last=row.length?nums.indexOf(row[row.length-1]):-1,locked=state.locks.includes(colors[c]);
   b+='<div class="mini-row '+colors[c]+'" aria-label="'+names[c]+' row'+(locked?' locked':'')+'">';
   b+=nums.map((n,j)=>'<span class="mini-number'+(row.includes(n)?' marked':j<last?' skipped':'')+'" aria-label="'+names[c]+' '+n+(row.includes(n)?' marked':j<last?' skipped':' available')+'">'+n+'</span>').join('');
-  b+='<span class="mini-lock" aria-label="'+names[c]+(locked?' locked':' unlocked')+'">'+(locked?'🔒':'')+'</span></div>';
+  b+='<span class="mini-lock" aria-label="'+names[c]+(locked?' locked':' unlocked')+'">'+(locked?'🔒':'')+'</span>'+(locked?'<span class="mini-locked-label" aria-hidden="true">🔒 LOCKED</span>':'')+'</div>';
  });
  return b+'<div class="mini-footer"><span>Strikes: '+board.penalties+' / 4</span><span>'+(leading?'Leader':'AI opponent')+'</span></div></section>';
 }
