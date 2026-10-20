@@ -24,6 +24,8 @@ def test_board_layout_and_accessible_controls():
         "aria-label=\"AI opponents\"", "function miniCard(board,i)",
         "mini-number", "mini-lock", "mini-number.skipped",
         "mini-card.rolling", "mini-card.leading",
+        "dice-status", "mini-row{border-radius:5px",
+        ".number-cell.skipped:after,.mini-number.skipped:after",
         "aria-label=\"Your move\"", "onclick=\"confirmPhase()\"",
         "onclick=\"clearSelection()\"", "onclick=\"skipPhase()\"",
         "onclick=\"backToStep1()\"", "Pass — take strike",
@@ -101,6 +103,9 @@ vm.runInContext('render()',context);
 const board=el('boards').innerHTML;
 assert.equal((board.match(/class="mini-card/g)||[]).length,3);
 assert.match(board,/class="human-column"/);
+assert.match(board,/class="dice-status"/);
+assert.match(board,/dice-tray/);
+assert.equal(el("status").innerHTML,"");
 assert.match(board,/class="opponents-column"/);
 assert.match(board,/AI-Sir Rolls-a-Lot/);
 assert.match(board,/Red 3 skipped/);
@@ -119,6 +124,11 @@ assert.match(el('boards').innerHTML,/confirmPhase\(\)" disabled/);
 vm.runInContext('state.phase=4;state.roller=0;',context);
 vm.runInContext('render()',context);
 assert.match(el('boards').innerHTML,/Pass — take strike/);
+assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\\(\\)" disabled/);
+vm.runInContext("moving=true;render()",context);
+assert.match(el("boards").innerHTML,/onclick="skipPhase\\(\\)" disabled/);
+vm.runInContext("moving=false;render()",context);
+assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\\(\\)" disabled/);
 """
     script = tmp_path / "ux_check.js"
     game = tmp_path / "game.js"
