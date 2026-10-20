@@ -93,10 +93,10 @@ const boards=Array.from({length:4},()=>({rows:rows.map(x=>[...x]),penalties:0}))
 boards[1].rows[0]=[2,4];
 boards[2].rows[1]=[2,3,4];
 boards[3].penalties=2;
-context.state={boards,scores:[10,15,12,8],roller:1,phase:0,turn:3,
+const initial={boards,scores:[10,15,12,8],roller:1,phase:0,turn:3,
  dice:[2,4,3,2,1,5],locks:['red'],done:false,legal:[[0,6,false]],
  explanations:[],active_marks:0,can_undo_step1:false,action_history:[]};
-context.pending=null;
+vm.runInContext('state='+JSON.stringify(initial)+'; pending=null;',context);
 vm.runInContext('render()',context);
 const board=el('boards').innerHTML;
 assert.equal((board.match(/class="mini-card/g)||[]).length,3);
@@ -116,7 +116,7 @@ assert.match(el('boards').innerHTML,/Selected: Red 6/);
 assert.doesNotMatch(el('boards').innerHTML,/confirmPhase\(\)" disabled/);
 vm.runInContext('clearSelection()',context);
 assert.match(el('boards').innerHTML,/confirmPhase\(\)" disabled/);
-context.state.phase=4;context.state.roller=0;
+vm.runInContext('state.phase=4;state.roller=0;',context);
 vm.runInContext('render()',context);
 assert.match(el('boards').innerHTML,/Pass — take strike/);
 """
