@@ -73,7 +73,7 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .number-cell.skipped:after,.mini-number.skipped:after{content:'';position:absolute;left:3px;right:3px;top:50%;height:3px;background:currentColor;transform:translateY(-50%);pointer-events:none;border-radius:3px;opacity:.9}
 .mini-number.skipped{text-decoration:none;opacity:.8}
 .mini-number.skipped:after{height:2px;left:1px;right:1px}
-.mini-row-locked{position:relative;outline:2px solid #aab8cc;outline-offset:-2px;filter:saturate(.5)}
+.mini-row-locked{position:relative;outline:2px solid #aab8cc;outline-offset:-2px;background:#17212e!important;filter:none}.mini-row-locked .mini-number{background:#17212e;color:#a6b2c3;border-color:#344255;opacity:.55}.mini-row-locked .mini-number.marked{background:#263447;color:#dbe4ef;border-color:#526174;opacity:.85}.mini-row-locked .mini-number.skipped:after{opacity:1}.mini-row-locked .mini-lock{color:#e2e8f0}.mini-row-locked:after{content:"";position:absolute;left:5px;right:24px;top:50%;height:3px;transform:translateY(-50%);background:#e2e8f0;opacity:.85;pointer-events:none;z-index:1}
 .mini-locked-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;background:#101b2e;color:#fff;border:1px solid #d1dae8;border-radius:4px;padding:2px 9px;font-size:11px;font-weight:800;letter-spacing:.08em;white-space:nowrap;pointer-events:none;box-shadow:0 1px 5px #0008}
 @media(max-width:980px){.game-grid{grid-template-columns:1fr}.opponents-column{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-card{padding:7px}.mini-row{grid-template-columns:repeat(11,minmax(0,1fr)) 15px;gap:1px}.mini-number{font-size:9px;min-height:21px}.mini-header{font-size:12px}}
 @media(max-width:640px){.opponents-column{grid-template-columns:1fr}.mini-number{font-size:12px}.human-column .score-row{min-width:470px}.theme-picker{margin-left:0}.game-toolbar{flex-wrap:wrap}}
@@ -203,7 +203,7 @@ function miniCard(board,i){
   const nums=c<2?[2,3,4,5,6,7,8,9,10,11,12]:[12,11,10,9,8,7,6,5,4,3,2];
   const last=row.length?nums.indexOf(row[row.length-1]):-1,locked=state.locks.includes(colors[c]);
   b+='<div class="mini-row '+colors[c]+(locked?' mini-row-locked':'')+'" aria-label="'+names[c]+' row'+(locked?' locked':'')+'">';
-  b+=nums.map((n,j)=>'<span class="mini-number'+(row.includes(n)?' marked':j<last?' skipped':'')+'" aria-label="'+names[c]+' '+n+(row.includes(n)?' marked':j<last?' skipped':' available')+'">'+n+'</span>').join('');
+  b+=nums.map((n,j)=>'<span class="mini-number'+(row.includes(n)?' marked':(locked||j<last)?' skipped':'')+'" aria-label="'+names[c]+' '+n+(row.includes(n)?' marked':(locked||j<last)?' skipped':' available')+'">'+n+'</span>').join('');
   b+='<span class="mini-lock" aria-label="'+names[c]+(locked?' locked':' unlocked')+'">'+(locked?'🔒':'')+'</span>'+(locked?'<span class="mini-locked-label" aria-hidden="true">🔒 LOCKED</span>':'')+'</div>';
  });
  return b+'<div class="mini-footer"><span>Strikes: '+board.penalties+' / 4</span><span>'+(leading?'Leader':'AI opponent')+'</span></div></section>';
