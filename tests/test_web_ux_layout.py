@@ -139,3 +139,14 @@ assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
         text=True, check=False,
     )
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_simultaneous_white_lock_remains_clickable_in_scorecard():
+    """A global lock created during this white phase must not hide a legal move."""
+    html = html_source()
+    assert "pendingLock=locked&&state.phase<state.boards.length" in html
+    assert "(state.white_locks||[]).includes(colors[c])" in html
+    assert "rowClosed=locked&&!pendingLock" in html
+    assert "i===0&&!state.done?state.legal.find" in html
+    assert "rowClosed?' row-locked'" in html
+    assert "rowClosed?'<div class=\\"row-lock-overlay" in html
