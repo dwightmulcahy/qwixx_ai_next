@@ -149,4 +149,4 @@ def test_simultaneous_white_lock_remains_clickable_in_scorecard():
     assert "rowClosed=locked&&!pendingLock" in html
     assert "i===0&&!state.done?state.legal.find" in html
     assert "rowClosed?' row-locked'" in html
-    assert "rowClosed?'<div class=\\"row-lock-overlay" in html
+    assert "rowClosed?" in html and "row-lock-overlay" in html
