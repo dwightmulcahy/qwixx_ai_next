@@ -54,3 +54,29 @@ def test_rejects_invalid_players_and_difficulties(tmp_path):
     with pytest.raises(ValueError):
         store.stats(player["id"], difficulty="impossible")
     store.db.close()
+
+
+def test_leaderboard_only_verified_players_and_ranking_filters(tmp_path):
+    store = PlayerStats(tmp_path / "players.sqlite3")
+    registered = store.create_profile("Registered")
+    second = store.create_profile("Second")
+    guest = store.create_profile("Guest")
+    with store.lock:
+        store.db.execute("UPDATE players SET email=? WHERE id=?", ("registered@example.com", registered["id"]))
+        store.db.execute("UPDATE players SET email=? WHERE id=?", ("second@example.com", second["id"]))
+        store.db.commit()
+    for i in range(5):
+        assert store.record(f"r-{i}", registered["id"], "champion", completed([70+i, 30, 20, 10]))
+    store.record("s-1", second["id"], "beginner", completed([100, 20, 10, 5]))
+    store.record("guest", guest["id"], "champion", completed([150, 20, 10, 5]))
+    result = store.leaderboard()
+    assert result["registered_players"] == 2
+    assert [p["name"] for p in result["rankings"]["most_wins"]] == ["Registered", "Second"]
+    assert result["rankings"]["highest_score"][0]["name"] == "Second"
+    assert [p["name"] for p in result["rankings"]["win_rate"]] == ["Registered"]
+    assert result["rankings"]["average_score"][0]["name"] == "Registered"
+    assert [p["name"] for p in store.leaderboard("champion")["rankings"]["most_wins"]] == ["Registered"]
+    assert "email" not in str(result)
+    with pytest.raises(ValueError):
+        store.leaderboard("impossible")
+    store.db.close()
