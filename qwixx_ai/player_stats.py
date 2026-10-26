@@ -194,3 +194,40 @@ class PlayerStats:
                         "turns": r[3], "scores": json.loads(r[4]), "result": r[5],
                         "created": r[6]} for r in reversed(rows[-limit:])]
         }
+
+    def leaderboard(self, difficulty=None, limit=10):
+        """Public rankings of verified registered players with completed games."""
+        if difficulty is not None and difficulty not in ("beginner", "intermediate", "advanced", "champion"):
+            raise ValueError("Invalid difficulty")
+        limit = max(1, min(int(limit), 10))
+        condition = "AND r.difficulty=?" if difficulty else ""
+        params = (difficulty,) if difficulty else ()
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT p.name, COUNT(*) AS games, "
+                "SUM(CASE WHEN r.result='win' THEN 1 ELSE 0 END) AS wins, "
+                "SUM(CASE WHEN r.result='tie' THEN 1 ELSE 0 END) AS ties, "
+                "MAX(r.score) AS highest_score, ROUND(AVG(r.score),1) AS average_score, "
+                "SUM(r.score) AS total_points "
+                "FROM results r JOIN players p ON p.id=r.player_id "
+                "WHERE p.email IS NOT NULL " + condition + " GROUP BY p.id, p.name", params
+            ).fetchall()
+        players = [dict(name=row[0], games=row[1], wins=row[2], ties=row[3],
+                        highest_score=row[4], average_score=row[5], total_points=row[6],
+                        win_rate=round(100*row[2]/row[1], 1)) for row in rows]
+        metrics = {
+            "most_wins": ("wins", "games", "highest_score"),
+            "highest_score": ("highest_score", "wins", "games"),
+            "total_points": ("total_points", "wins", "games"),
+            "average_score": ("average_score", "wins", "games"),
+            "win_rate": ("win_rate", "wins", "games"),
+            "most_games": ("games", "wins", "highest_score"),
+        }
+        # Win-rate and average-score rankings require at least 5 completed games.
+        rankings = {}
+        for name, keys in metrics.items():
+            eligible = [p for p in players if p["games"] >= 5] if name in ("win_rate", "average_score") else players
+            ordered = sorted(eligible, key=lambda p: tuple(-p[key] for key in keys)+(p["name"].casefold(),))
+            rankings[name] = ordered[:limit]
+        return {"difficulty": difficulty or "all", "minimum_games_for_rates": 5,
+                "registered_players": len(players), "rankings": rankings}
