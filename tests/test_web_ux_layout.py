@@ -158,3 +158,15 @@ def test_locked_row_tooltips_identify_locking_players():
     assert "e.action[2]===true" in html
     assert "people.join(', ')" in html
     assert 'title="'+ "'+escapeHtml(lockTooltip(colors[c]))+" in html
+
+
+def test_leaderboard_defaults_to_champion_and_separates_difficulties():
+    html = html_source()
+    assert "select?select.value:'champion'" in html
+    assert "['champion','🏆 Champion']" in html
+    assert "['advanced','Advanced']" in html
+    assert "['intermediate','Intermediate']" in html
+    assert "['beginner','Beginner']" in html
+    assert "['','All difficulties']" not in html
+    assert "results never mix across difficulty levels" in html
+    assert "?difficulty='+encodeURIComponent(difficulty)" in html
