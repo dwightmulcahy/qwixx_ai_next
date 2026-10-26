@@ -109,6 +109,7 @@ jobs:
           IMAGE: example/qwixx-ai:1.0.0
           QNAP_DATA_DIR: /tmp/qwixx-runs
         run: |
+          cp .env.example .env
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.qnap.yaml config --quiet
   docker:
