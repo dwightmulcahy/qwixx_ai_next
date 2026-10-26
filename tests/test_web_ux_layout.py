@@ -150,3 +150,11 @@ def test_simultaneous_white_lock_remains_clickable_in_scorecard():
     assert "i===0&&!state.done?state.legal.find" in html
     assert "rowClosed?' row-locked'" in html
     assert "rowClosed?" in html and "row-lock-overlay" in html
+
+
+def test_locked_row_tooltips_identify_locking_players():
+    html = html_source()
+    assert "function lockTooltip(color)" in html
+    assert "e.action[2]===true" in html
+    assert "people.join(', ')" in html
+    assert 'title="'+ "'+escapeHtml(lockTooltip(colors[c]))+" in html
