@@ -350,6 +350,11 @@ class Handler(BaseHTTPRequestHandler):
                 try:limit=int(self.path.split('limit=',1)[1].split('&',1)[0]) if 'limit=' in self.path else 100
                 except ValueError:limit=100
                 return self.reply({'games':self.coord.history(limit)})
+            if self.path=='/api/leaderboard' or self.path.startswith('/api/leaderboard?'):
+                from urllib.parse import parse_qs, urlsplit
+                query=parse_qs(urlsplit(self.path).query)
+                try:return self.reply(self.coord.player_stats.leaderboard(query.get('difficulty',[None])[0]))
+                except ValueError as exc:return self.reply({'error':str(exc)},400)
             if self.path=='/api/auth/me':
                 pid=self.player_id();return self.reply({'player':self.coord.player_stats.profile(pid) if pid else None})
             if self.path=='/api/player-stats' or self.path.startswith('/api/player-stats?'):
