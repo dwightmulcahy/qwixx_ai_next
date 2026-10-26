@@ -161,19 +161,19 @@ async function showStats(){
 }
 async function showLeaderboard(){
  const panel=document.getElementById('leaderboard');if(!panel)return;
- const select=document.getElementById('leaderboard-difficulty');const difficulty=select?select.value:'';
+ const select=document.getElementById('leaderboard-difficulty');const difficulty=select?select.value:'champion';
  panel.innerHTML='<h2>Top 10 · Registered Players</h2><p>Loading rankings…</p>';
  try{
   const response=await fetch('/api/leaderboard'+(difficulty?'?difficulty='+encodeURIComponent(difficulty):''));
   if(!response.ok)throw Error('Leaderboard unavailable (HTTP '+response.status+')');
   const data=await response.json();
   const metric=[['most_wins','Most wins','wins'],['highest_score','Highest single-game score','highest_score'],['total_points','Most total points','total_points'],['average_score','Best average score','average_score'],['win_rate','Best win rate','win_rate'],['most_games','Most games played','games']];
-  const picker='<label for="leaderboard-difficulty">AI difficulty: </label><select id="leaderboard-difficulty" onchange="showLeaderboard()">'+[['','All difficulties'],['beginner','Beginner'],['intermediate','Intermediate'],['advanced','Advanced'],['champion','Champion']].map(([v,label])=>'<option value="'+v+'"'+(v===difficulty?' selected':'')+'>'+label+'</option>').join('')+'</select>';
+  const picker='<label for="leaderboard-difficulty">Separate leaderboard: </label><select id="leaderboard-difficulty" onchange="showLeaderboard()">'+[['champion','🏆 Champion'],['advanced','Advanced'],['intermediate','Intermediate'],['beginner','Beginner']].map(([v,label])=>'<option value="'+v+'"'+(v===difficulty?' selected':'')+'>'+label+'</option>').join('')+'</select>';
   const tables=metric.map(([key,label,field])=>{
    const rows=data.rankings[key]||[];
    return '<section class="leaderboard-card"><h3>'+label+'</h3>'+(rows.length?'<div class="career-table-wrap"><table><thead><tr><th>#</th><th>Player</th><th>'+label+'</th><th>Games</th><th>Wins</th></tr></thead><tbody>'+rows.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+escapeHtml(p.name)+'</td><td>'+escapeHtml(p[field])+(field==='win_rate'?'%':'')+'</td><td>'+p.games+'</td><td>'+p.wins+'</td></tr>').join('')+'</tbody></table></div>':'<p class="hint">No qualifying players yet.</p>')+'</section>';
   }).join('');
-  panel.innerHTML='<h2>🏆 Top 10 · Registered Players</h2><p class="hint">Only completed games played while signed in count. Rankings show public display names, never email addresses. Average score and win rate require at least '+data.minimum_games_for_rates+' games.</p>'+picker+'<p class="hint">'+data.registered_players+' registered players with results</p><div class="leaderboard-grid">'+tables+'</div>';
+  panel.innerHTML='<h2>🏆 Top 10 · '+escapeHtml(difficulty.charAt(0).toUpperCase()+difficulty.slice(1))+' AI</h2><p class="hint">Each AI difficulty has its own rankings; results never mix across difficulty levels. Only completed games played while signed in count. Rankings show public display names, never email addresses. Average score and win rate require at least '+data.minimum_games_for_rates+' games.</p>'+picker+'<p class="hint">'+data.registered_players+' registered players with results</p><div class="leaderboard-grid">'+tables+'</div>';
  }catch(e){panel.innerHTML='<h2>Top 10</h2><p role="alert">'+escapeHtml(e.message)+'</p><button type="button" onclick="showLeaderboard()">Retry</button>'}
 }
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
