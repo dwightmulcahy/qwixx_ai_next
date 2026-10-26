@@ -1,0 +1,39 @@
+# QNAP Container Station: pull a manually tagged Docker Hub image.
+services:
+  qwixx:
+    image: ${IMAGE:?Set IMAGE to a published Docker Hub tag in .env}
+    container_name: qwixx-ai
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8765}:8765"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: America/Costa_Rica
+      QWIXX_DATA: /app/runs
+      QWIXX_TORCH_THREADS: "2"
+      QWIXX_CENTRAL_WORKERS: "2"
+      QWIXX_MAX_BROWSER_WORKERS: "2"
+      PYTHONUNBUFFERED: "1"
+      QWIXX_COOKIE_SECURE: ${QWIXX_COOKIE_SECURE:-false}
+    volumes:
+      - ${QNAP_DATA_DIR:?Set QNAP_DATA_DIR to your existing persistent runs directory}:/app/runs
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 256
+    mem_limit: 2g
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8765/health',timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
