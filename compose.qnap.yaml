@@ -3,6 +3,7 @@ services:
   qwixx:
     image: ${IMAGE:?Set IMAGE to a published Docker Hub tag in .env}
     container_name: qwixx-ai
+    init: true
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-8765}:8765"
@@ -21,7 +22,7 @@ services:
       - ${QNAP_DATA_DIR:?Set QNAP_DATA_DIR to your existing persistent runs directory}:/app/runs
     read_only: true
     tmpfs:
-      - /tmp:rw,nosuid,nodev,size=128m
+      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
