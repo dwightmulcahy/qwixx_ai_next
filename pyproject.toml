@@ -1,5 +1,5 @@
 [build-system]
-requires=['setuptools>=84.0.0']
+requires=['setuptools>=84.2.1']
 build-backend='setuptools.build_meta'
 [project]
 name='qwixx-ai'
@@ -8,7 +8,7 @@ requires-python='>=3.10'
 dependencies=['numpy>=2.2.6','torch>=2.14.1']
 [project.optional-dependencies]
 gym=['gymnasium>=1.4.0']
-dev=['pytest>=9.1.1','gymnasium>=1.4.0','ruff>=0.17.1']
+dev=['pytest>=9.1.1','gymnasium>=1.4.0','ruff>=0.17.2']
 
 [tool.setuptools.packages.find]
 include = ['qwixx_ai*']
