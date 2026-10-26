@@ -6,11 +6,13 @@ services:
         QWIXX_GIT_VERSION: ${QWIXX_GIT_VERSION:-dev}
     image: qwixx-ai:distributed
     container_name: qwixx-ai
+    init: true
     restart: unless-stopped
     ports:
-      - "8765:8765"
+      - "${HOST_PORT:-8765}:8765"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       TZ: America/Costa_Rica
       QWIXX_DATA: /app/runs
@@ -28,6 +30,9 @@ services:
       timeout: 8s
       retries: 3
       start_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
