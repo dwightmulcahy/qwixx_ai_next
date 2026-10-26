@@ -4,6 +4,7 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
@@ -98,6 +99,18 @@ jobs:
           name: full-suite-results
           path: all-tests.xml
           if-no-files-found: ignore
+  compose:
+    name: Validate Compose configurations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate local and QNAP configurations
+        env:
+          IMAGE: example/qwixx-ai:1.0.0
+          QNAP_DATA_DIR: /tmp/qwixx-runs
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.qnap.yaml config --quiet
   docker:
     name: Docker API integration
     runs-on: ubuntu-latest
@@ -115,7 +128,7 @@ jobs:
       - name: Run and verify container APIs
         run: |
           set -euo pipefail
-          docker run -d --name qwixx-ci -p 127.0.0.1:8765:8765 -e QWIXX_DATA=/app/runs qwixx-ai:ci
+          docker run -d --name qwixx-ci -p 127.0.0.1:8765:8765 --read-only --tmpfs /tmp:rw,nosuid,nodev,size=128m --mount type=tmpfs,destination=/app/runs,tmpfs-mode=1777 --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 256 --memory 2g -e QWIXX_DATA=/app/runs qwixx-ai:ci
           trap 'docker logs qwixx-ci || true; docker rm -f qwixx-ci || true' EXIT
           for attempt in $(seq 1 30); do
             if curl --fail --silent --max-time 5 http://127.0.0.1:8765/health >/tmp/health.json; then break; fi
@@ -149,7 +162,7 @@ jobs:
   required:
     name: CI gate
     if: always()
-    needs: [lint, rules, training, browser, full-suite, docker]
+    needs: [lint, rules, training, browser, full-suite, compose, docker]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks to pass
@@ -158,4 +171,4 @@ jobs:
         run: |
           echo "$RESULTS"
           for result in $RESULTS; do test "$result" = success || exit 1; done
-          test "$(wc -w <<< "$RESULTS")" -eq 6
+          test "$(wc -w <<< "$RESULTS")" -eq 7
