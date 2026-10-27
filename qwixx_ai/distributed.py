@@ -346,6 +346,13 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/worker.js':return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
             if self.path=='/health':return self.reply({'healthy':True})
             if self.path=='/api/stats':return self.reply(self.coord.stats())
+            if self.path.startswith('/api/session-progress?'):
+                from urllib.parse import parse_qs, urlsplit
+                sid=parse_qs(urlsplit(self.path).query).get('session_id',[''])[0]
+                entry=self.coord.sessions.get(sid)
+                if not entry:return self.reply({'error':'Session not found'},404)
+                if entry[2]!=self.player_id():return self.reply({'error':'Forbidden'},403)
+                return self.reply({'actor':entry[0].thinking_actor})
             if self.path.startswith('/api/history'):
                 try:limit=int(self.path.split('limit=',1)[1].split('&',1)[0]) if 'limit=' in self.path else 100
                 except ValueError:limit=100
