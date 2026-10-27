@@ -139,7 +139,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Publish versioned Docker Hub image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        uses: dwightmulcahy/repo-template/.github/actions/docker-publish@5d53ef5f4bc64a296c057d6c64ec10e7a0245c39
         with:
           context: .
           platforms: linux/amd64,linux/arm64
