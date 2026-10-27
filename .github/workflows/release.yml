@@ -96,6 +96,18 @@ jobs:
           VERSION: ${{ steps.version.outputs.tag }}
         run: python scripts/release_notes.py "$VERSION" > release-notes.md
 
+      - name: Create or update GitHub Release with grouped changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release edit "$VERSION" --title "$VERSION" --notes-file release-notes.md
+          else
+            gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file release-notes.md
+          fi
+
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
@@ -138,14 +150,3 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      - name: Create GitHub Release with grouped changelog
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.tag }}
-        run: |
-          set -euo pipefail
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release already exists; leaving it unchanged."
-          else
-            gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file release-notes.md
-          fi
