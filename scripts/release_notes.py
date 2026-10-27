@@ -41,12 +41,13 @@ def main():
         match = PATTERN.match(subject)
         if match:
             kind, scope, bang, description = match.groups()
-            item = f"- {description}" + (f" ({scope})" if scope else "") + f" (`{sha}`)"
+            item = f"- **{scope}:** {description}" if scope else f"- {description}"
+            item += f" ({sha})"
             groups.get(kind, groups["other"]).append(item)
             if bang:
                 breaking.append(item)
         else:
-            groups["other"].append(f"- {subject} (`{sha}`)")
+            groups["other"].append(f"- {subject} ({sha})")
     print(f"# Qwixx AI {tag.removeprefix('v')}\n")
     if previous:
         print(f"Changes since {previous}.\n")
