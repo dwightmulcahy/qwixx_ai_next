@@ -77,6 +77,7 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .mini-locked-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;background:#101b2e;color:#fff;border:1px solid #d1dae8;border-radius:4px;padding:2px 9px;font-size:11px;font-weight:800;letter-spacing:.08em;white-space:nowrap;pointer-events:auto;cursor:help;box-shadow:0 1px 5px #0008}
 @media(max-width:980px){.game-grid{grid-template-columns:1fr}.opponents-column{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.mini-card{padding:7px}.mini-row{grid-template-columns:repeat(11,minmax(0,1fr)) 15px;gap:1px}.mini-number{font-size:9px;min-height:21px}.mini-header{font-size:12px}}
 @media(max-width:640px){.opponents-column{grid-template-columns:1fr}.mini-number{font-size:12px}.human-column .score-row{min-width:470px}.theme-picker{margin-left:0}.game-toolbar{flex-wrap:wrap}}
+.mini-card.ai-active{border:2px solid #60a5fa;box-shadow:0 0 0 2px #60a5fa44}.mini-card.ai-active .mini-header{color:#93c5fd}
 .ai-thinking{display:inline-flex;align-items:center;gap:9px;padding:9px 13px;margin:0 0 10px;border:1px solid #60a5fa;border-radius:9px;background:var(--panel);color:var(--text);font-weight:700;animation:thinking-appear .15s ease .15s both}.ai-thinking-spinner{width:17px;height:17px;border:3px solid #64748b;border-top-color:#60a5fa;border-radius:50%;animation:ai-thinking-spin .75s linear infinite}@keyframes ai-thinking-spin{to{transform:rotate(360deg)}}@keyframes thinking-appear{from{opacity:0}to{opacity:1}}@media(prefers-reduced-motion:reduce){.ai-thinking,.ai-thinking-spinner{animation:none}}
 </style></head><body><h1>Qwixx AI <small id="app-version" style="font-size:.48em;color:#94a3b8;font-weight:600"></small></h1><p><a href="/training">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a highlighted number on your scorecard, or skip a phase.</p>
 <label for="difficulty">AI difficulty</label><select id="difficulty"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="champion" selected>Champion</option></select><button onclick="reset()">New game</button> <span id="account-status">Guest</span> <button onclick="toggleStats()">Your Stats</button> <button id="auth-logout" onclick="logout()" hidden>Sign out</button><div id="auth-login"><label>Email <input id="auth-email" type="email" placeholder="you@example.com"></label><label> Name (new accounts) <input id="auth-name" placeholder="Display name"></label><button onclick="requestCode()">Email me a code</button><div id="verify-box" hidden><label>Six-digit code <input id="auth-code" inputmode="numeric" maxlength="6"></label><button onclick="verifyCode()">Verify & sign in</button></div><p id="auth-message"></p></div><section id="career" class="career-panel" hidden></section><p id="game-error" role="alert" style="background:#7f1d1d;padding:12px;border-radius:8px" hidden></p><div id="status"><p>Loading game…</p></div><div id="boards"></div><h3>Your choices</h3><div id="actions"></div><details><summary>Turn action history (diagnostics)</summary><pre id="game-history" style="white-space:pre-wrap"></pre></details>
@@ -130,7 +131,7 @@ function applyTheme(v){const light=v==='light'||(v==='auto'&&window.matchMedia&&
 function setTheme(v){if(!['dark','light','auto'].includes(v))return;try{localStorage.setItem(THEME_KEY,v)}catch(e){}applyTheme(v)}
 applyTheme(readTheme());
 if(window.matchMedia){const media=window.matchMedia('(prefers-color-scheme: light)');if(media.addEventListener)media.addEventListener('change',()=>applyTheme(readTheme()))}
-let state, pending=null, gameOverShown=false;
+let state, pending=null, gameOverShown=false, thinkingActor=null;
 
 async function api(path,body){try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed ('+r.status+')');return j}catch(e){if(path.startsWith('/api/auth/')){const msg=document.getElementById('auth-message');if(msg)msg.textContent='Email verification error: '+e.message+'. Check SMTP settings and container logs.';console.error('Qwixx authentication:',e)}else showGameError(e.message);return null}}
 function showGameError(message){const el=document.getElementById('game-error');if(el){el.hidden=false;el.textContent='Game error: '+message+' — please try New game or reload the page.'}console.error('Qwixx:',message)}
@@ -200,7 +201,7 @@ let moving=false;function showNewPenalties(previous,next){
  const button=document.createElement('button');button.textContent='Continue';button.onclick=()=>overlay.remove();
  dialog.appendChild(button);overlay.appendChild(dialog);document.body.appendChild(overlay);button.focus();
 }
-async function act(a){if(moving||!state||state.done)return;moving=true;render();try{const previous=state;const next=await api('/move',{action:a,session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render();showNewPenalties(previous,next)}}finally{moving=false;if(state)render()}}
+async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid&&thinkingActor!==progress.actor){thinkingActor=progress.actor;render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;if(state)render()}}
 
 function selectMark(action){if(moving||!state||state.done)return;pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
@@ -219,7 +220,7 @@ function card(board,i){let b='<div class="player-panel '+(i!==0&&i!==state.rolle
  b+='<div class="score-footer score-totals"><strong>Result:</strong>'+board.rows.map((row,c)=>{let k=row.length+(state.locks.includes(colors[c])&&row.includes(c<2?12:2)?1:0);return '<span class="total-box '+colors[c]+'">'+(k*(k+1)/2)+'</span>'}).join('<span>+</span>')+'<span>−</span><span class="total-box penalty">'+(board.penalties*5)+'</span><span>=</span><span class="total-box final">'+state.scores[i]+'</span></div></section></div>';return b}
 function miniCard(board,i){
  const leading=state.scores[i]===Math.max(...state.scores);
- let b='<section class="mini-card'+(state.roller===i?' rolling':'')+(leading?' leading':'')+'" aria-label="'+playerNames[i]+' miniature scorecard"><div class="mini-header"><span>'+playerNames[i]+(state.roller===i?' · Rolling':'')+'</span><span>'+state.scores[i]+' pts'+(leading?' ★':'')+'</span></div>';
+ let b='<section class="mini-card'+(state.roller===i?' rolling':'')+(leading?' leading':'')+(moving&&thinkingActor===i?' ai-active':'')+'" aria-label="'+playerNames[i]+' miniature scorecard"><div class="mini-header"><span>'+playerNames[i]+(moving&&thinkingActor===i?' · Thinking…':state.roller===i?' · Rolling':'')+'</span><span>'+state.scores[i]+' pts'+(leading?' ★':'')+'</span></div>';
  board.rows.forEach((row,c)=>{
   const nums=c<2?[2,3,4,5,6,7,8,9,10,11,12]:[12,11,10,9,8,7,6,5,4,3,2];
   const last=row.length?nums.indexOf(row[row.length-1]):-1,locked=state.locks.includes(colors[c]);
@@ -239,7 +240,7 @@ function render(){if(!state)return;
   const diceHtml=turnHeader+'<p class="turn-subtitle">'+(whitePhase?'Step 1 · Everyone may mark the white-dice total':'Step 2 · Roller may use white + colored dice')+'</p><div class="dice-tray">'+state.dice.map((n,i)=>die(n,i<2?'white':colors[i-2],i<2?'White '+(i+1):names[i-2],i>=2&&(!youRoll||whitePhase||state.locks.includes(colors[i-2])))).join('')+'</div>';
  document.getElementById('status').innerHTML='';
  const controls='<div class="phase-controls" aria-label="Your move"><p class="phase-instruction">'+instruction+'</p>'+(pending?'<p class="selected-mark">Selected: '+names[pending[0]]+' '+pending[1]+'</p>':'')+'<button class="confirm" onclick="confirmPhase()" '+(!pending||moving||state.done?'disabled':'')+'>✓ Mark selected number</button><button onclick="clearSelection()" '+(!pending?'disabled':'')+'>Clear selection</button><button class="skip" onclick="skipPhase()" '+(moving||state.done?'disabled':'')+'>'+(youRoll&&!whitePhase&&state.active_marks===0?'Pass — take strike':'Pass →')+'</button>'+(state.can_undo_step1?'<button onclick="backToStep1()">← Back to Step 1</button>':'')+(youRoll&&!whitePhase&&state.active_marks===0?'<p class="strike-warning">⚠ Passing now gives you a strike (−5 points).</p>':youRoll&&whitePhase?'<p class="hint">A strike only occurs if you pass both opportunities on your roll.</p>':youRoll?'<p class="hint">You already marked this roll, so passing Step 2 has no penalty.</p>':'<p class="hint">No strike when you pass on another player’s roll.</p>')+'</div>';
- document.getElementById('boards').innerHTML=(moving?'<div class="ai-thinking" role="status" aria-live="polite"><span class="ai-thinking-spinner" aria-hidden="true"></span><span>AI opponents thinking…</span></div>':'')+'<div class="game-grid"><div class="human-column"><div class="dice-status">'+diceHtml+'</div>'+card(state.boards[0],0)+controls+'</div><aside class="opponents-column" aria-label="AI opponents">'+state.boards.slice(1).map((board,j)=>miniCard(board,j+1)).join('')+'</aside></div>';
+ document.getElementById('boards').innerHTML=(moving?'<div class="ai-thinking" role="status" aria-live="polite"><span class="ai-thinking-spinner" aria-hidden="true"></span><span>'+(thinkingActor===null?'AI opponents thinking…':playerNames[thinkingActor]+' thinking…')+'</span></div>':'')+'<div class="game-grid"><div class="human-column"><div class="dice-status">'+diceHtml+'</div>'+card(state.boards[0],0)+controls+'</div><aside class="opponents-column" aria-label="AI opponents">'+state.boards.slice(1).map((board,j)=>miniCard(board,j+1)).join('')+'</aside></div>';
  const history=document.getElementById('game-history');
  if(history){const actions=state.action_history||[];history.textContent=actions.length?actions.slice(-12).map(e=>'Turn '+e.turn+' · '+(e.phase<state.boards.length?'Step 1':'Step 2')+' · '+(e.source==='human'?'You':'AI '+e.actor)+' · '+(e.action?names[e.action[0]]+' '+e.action[1]:'Passed')+' · whites '+e.white_total).join('\\n'):'No moves recorded yet';}
  const choices=state.legal.map(a=>{const c=a[0],n=a[1],details=state.explanations.find(x=>x.move===colors[c]+' '+n),sources=whitePhase?'white '+state.dice[0]+' + white '+state.dice[1]:[0,1].filter(w=>state.dice[w]+state.dice[c+2]===n).map(w=>'white '+(w+1)+' ('+state.dice[w]+') + '+colors[c]+' ('+state.dice[c+2]+')').join(' OR ');return '<li><strong>'+names[c]+' '+n+(a[2]?' 🔒':'')+'</strong> — '+sources+(details?' · +'+details.immediate+' immediate points · skips '+details.skipped:'')+'</li>'}).join('');
@@ -263,7 +264,7 @@ HTML = HTML.replace('id="app-version" style="font-size:.48em;color:#94a3b8;font-
 class Session:
     def __init__(self,model=None,difficulty='champion'):
         if difficulty not in ('beginner','intermediate','advanced','champion'):raise ValueError('Invalid difficulty')
-        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game();self.history=[];self.step1_snapshot=None
+        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game();self.history=[];self.step1_snapshot=None;self.thinking_actor=None
     def ai(self,g):
         if self.difficulty=='beginner':return random_agent(g)
         if self.difficulty=='intermediate':return heuristic(g)
@@ -298,8 +299,12 @@ class Session:
                 self.step1_snapshot[0].turn==g.turn)
 
     def advance(self):
-        while not self.game.done and self.game.actor!=0:
-            self.apply_action(self.ai(self.game),'ai')
+        try:
+            while not self.game.done and self.game.actor!=0:
+                self.thinking_actor=self.game.actor
+                self.apply_action(self.ai(self.game),'ai')
+        finally:
+            self.thinking_actor=None
     def explanations(self):
         g=self.game;b=g.boards[g.actor]
         out=[]
