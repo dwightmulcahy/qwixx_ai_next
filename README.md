@@ -1,5 +1,13 @@
 # Qwixx AI — self-play + tournament + browser
 
+[![CI](https://github.com/dwightmulcahy/qwixx_ai_next/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/dwightmulcahy/qwixx_ai_next/actions/workflows/tests.yml)
+[![Release](https://github.com/dwightmulcahy/qwixx_ai_next/actions/workflows/release.yml/badge.svg)](https://github.com/dwightmulcahy/qwixx_ai_next/actions/workflows/release.yml)
+[![GitHub release](https://img.shields.io/github/v/release/dwightmulcahy/qwixx_ai_next?sort=semver)](https://github.com/dwightmulcahy/qwixx_ai_next/releases/latest)
+[![Docker Image Version](https://img.shields.io/docker/v/dwightmulcahy/qwixx-ai?sort=semver&label=docker)](https://hub.docker.com/r/dwightmulcahy/qwixx-ai)
+[![Docker Pulls](https://img.shields.io/docker/pulls/dwightmulcahy/qwixx-ai)](https://hub.docker.com/r/dwightmulcahy/qwixx-ai)
+[![Image Size](https://img.shields.io/docker/image-size/dwightmulcahy/qwixx-ai/latest)](https://hub.docker.com/r/dwightmulcahy/qwixx-ai)
+[![Dependabot](https://img.shields.io/badge/dependabot-enabled-025e8c?logo=dependabot)](.github/dependabot.yml)
+
 Python 3.10+; standard rules engine, public-state observation, shared-policy DQN self-play, replay buffer, frozen opponent snapshots, evaluation and best/latest checkpoints. **No pretrained weights included.**
 
 ## Setup
