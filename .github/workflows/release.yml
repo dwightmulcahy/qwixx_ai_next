@@ -26,7 +26,6 @@ jobs:
   release:
     needs: validate
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - name: Resolve existing tag
         id: version
@@ -143,10 +142,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}
             ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}.${{ steps.version.outputs.patch }}
+            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:{1}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major) || '' }}
+            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:{1}.{2}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
+            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:latest', secrets.DOCKERHUB_USERNAME) || '' }}
           provenance: mode=max
           sbom: true
 
