@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """Generate grouped release notes from conventional commit subjects."""
+import os
 import re
 import subprocess
 import sys
 
 GROUPS = [
-    ("feat", "Features"),
-    ("fix", "Bug Fixes"),
-    ("perf", "Performance"),
-    ("refactor", "Refactoring"),
-    ("docs", "Documentation"),
-    ("test", "Tests"),
-    ("build", "Build"),
-    ("ci", "CI"),
-    ("chore", "Maintenance"),
-    ("revert", "Reverts"),
+    ("feat", "✨ Features"),
+    ("fix", "🐛 Bug fixes"),
+    ("perf", "⚡ Performance"),
+    ("refactor", "♻️ Refactoring"),
+    ("security", "🔒 Security"),
+    ("docs", "📚 Documentation"),
+    ("test", "✅ Tests"),
+    ("build", "📦 Build system"),
+    ("ci", "👷 Continuous integration"),
+    ("chore", "🧹 Maintenance"),
+    ("revert", "↩️ Reverts"),
 ]
 PATTERN = re.compile(r"^(\w+)(?:\(([^)]+)\))?(!)?:\s+(.+)$")
 
@@ -45,16 +47,27 @@ def main():
                 breaking.append(item)
         else:
             groups["other"].append(f"- {subject} (`{sha}`)")
-    print(f"## {tag}\n")
+    print(f"# Qwixx AI {tag.removeprefix('v')}\n")
     if previous:
         print(f"Changes since {previous}.\n")
     if breaking:
-        print("### Breaking Changes\n" + "\n".join(breaking) + "\n")
-    for key, label in GROUPS + [("other", "Other Changes")]:
+        print("## 💥 Breaking changes\n" + "\n".join(breaking) + "\n")
+    for key, label in GROUPS + [("other", "🔧 Other changes")]:
         if groups[key]:
-            print(f"### {label}\n" + "\n".join(groups[key]) + "\n")
+            print(f"## {label}\n" + "\n".join(groups[key]) + "\n")
     if not lines:
         print("No commits found for this release.")
+    version = tag.removeprefix("v")
+    print("\n## 🐳 Docker\n")
+    print("```bash")
+    print(f"docker pull dwightmulcahy/qwixx-ai:{version}")
+    print("```\n")
+    print("Multi-architecture image: `linux/amd64` and `linux/arm64`.\n")
+    repository = os.environ.get("GITHUB_REPOSITORY", "dwightmulcahy/qwixx_ai_next")
+    if previous:
+        print(f"**Full changelog:** https://github.com/{repository}/compare/{previous}...{tag}")
+    else:
+        print(f"**Source:** https://github.com/{repository}/tree/{tag}")
 
 
 if __name__ == "__main__":
