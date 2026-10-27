@@ -93,7 +93,7 @@ jobs:
       - name: Generate grouped conventional-commit changelog
         env:
           VERSION: ${{ steps.version.outputs.tag }}
-        run: python scripts/release_notes.py "$VERSION" > release-notes.md
+        run: python scripts/standard_release_notes.py --tag "$VERSION" --project-name "Qwixx AI" --image "dwightmulcahy/qwixx-ai" --output release-notes.md
 
       - name: Create or update GitHub Release with grouped changelog
         env:
