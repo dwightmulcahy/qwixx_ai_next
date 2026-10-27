@@ -91,9 +91,12 @@ jobs:
           test "$check_conclusion" = success
 
       - name: Generate grouped conventional-commit changelog
-        env:
-          VERSION: ${{ steps.version.outputs.tag }}
-        run: python scripts/standard_release_notes.py --tag "$VERSION" --project-name "Qwixx AI" --image "dwightmulcahy/qwixx-ai" --output release-notes.md
+        uses: dwightmulcahy/repo-template/.github/actions/release-notes@f3dc1af2146156866574485a20ded5ac35d08a88
+        with:
+          tag: ${{ steps.version.outputs.tag }}
+          project-name: Qwixx AI
+          image: dwightmulcahy/qwixx-ai
+          output: release-notes.md
 
       - name: Create or update GitHub Release with grouped changelog
         env:
