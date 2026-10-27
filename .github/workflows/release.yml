@@ -64,88 +64,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          newest=$(git tag --list 'v*' | grep -E '^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          SHA: ${{ steps.verify.outputs.sha }}
-        run: |
-          set -euo pipefail
-          conclusion=$(gh api "/repos/$REPO/actions/runs?head_sha=$SHA&status=completed&per_page=100" \
-            --jq '[.workflow_runs[] | select(.name=="CI") | .conclusion][0] // "missing"')
-          echo "CI workflow for $SHA: $conclusion"
-          if [ "$conclusion" = success ]; then
-            exit 0
-          fi
-
-          check_conclusion=$(gh api "/repos/$REPO/commits/$SHA/check-runs?per_page=100" \
-            --jq '[.check_runs[] | select(.name=="CI gate") | .conclusion][0] // "missing"')
-          echo "CI gate check for $SHA: $check_conclusion"
-          test "$check_conclusion" = success
-
-      - name: Generate grouped conventional-commit changelog
-        env:
-          VERSION: ${{ steps.version.outputs.tag }}
-        run: python scripts/release_notes.py "$VERSION" > release-notes.md
-
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-
-      - name: Build and load amd64 smoke-test image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          tags: qwixx-ai:release-check
-
-      - name: Container smoke test
-        run: |
-          set -euo pipefail
-          docker run -d --name qwixx-release -p 127.0.0.1:8765:8765 qwixx-ai:release-check
-          trap 'docker logs qwixx-release || true; docker rm -f qwixx-release || true' EXIT
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent --max-time 5 http://127.0.0.1:8765/health; then exit 0; fi
-            sleep 3
-          done
-          exit 1
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Publish versioned Docker Hub image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}.${{ steps.version.outputs.patch }}
-            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:{1}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major) || '' }}
-            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:{1}.{2}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
-            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:latest', secrets.DOCKERHUB_USERNAME) || '' }}
-          provenance: mode=max
-          sbom: true
-
-      - name: Create GitHub Release with grouped changelog
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.tag }}
-        run: |
-          set -euo pipefail
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release already exists; leaving it unchanged."
-          else
-            gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file release-notes.md
-          fi
- | sort -V | tail -n 1)
+          newest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
           if [[ "$VERSION" == "$newest" ]]; then
             echo 'publish_floating=true' >> "$GITHUB_OUTPUT"
           else
-            echo "Older release $VERSION (newest is $newest); only immutable version tag will be published"
+            echo "Older release $VERSION (newest is $newest); publish exact version only"
             echo 'publish_floating=false' >> "$GITHUB_OUTPUT"
           fi
 
