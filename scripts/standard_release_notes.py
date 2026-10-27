@@ -115,12 +115,12 @@ def render(tag: str, repository: str, project_name: str, image: str) -> str:
         lines.extend(["## 🔧 Other changes", "", *remaining, ""])
     lines.extend(
         [
-        "## 🐳 Docker",
-        "",
-        "```bash",
-        f"docker pull {image}:{version}",
-        "```",
-        "",
+            "## 🐳 Docker",
+            "",
+            "```bash",
+            f"docker pull {image}:{version}",
+            "```",
+            "",
             "Multi-architecture image: `linux/amd64` and `linux/arm64`.",
             "",
         ]
