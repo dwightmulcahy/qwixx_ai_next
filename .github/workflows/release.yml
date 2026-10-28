@@ -57,19 +57,22 @@ jobs:
           git merge-base --is-ancestor "$SHA" origin/main
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Determine whether this is the newest stable tag
+      - name: Determine version-line Docker aliases
         id: latest
         env:
           VERSION: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          newest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
-          if [[ "$VERSION" == "$newest" ]]; then
-            echo 'publish_floating=true' >> "$GITHUB_OUTPUT"
-          else
-            echo "Older release $VERSION (newest is $newest); publish exact version only"
-            echo 'publish_floating=false' >> "$GITHUB_OUTPUT"
-          fi
+          versions="$(git tag --list 'v*' | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p')"
+          current="${VERSION#v}"
+          major="${current%%.*}"
+          minor="${current%.*}"
+          newest="$(printf '%s\n' "$versions" | sort -V | tail -n 1)"
+          newest_major="$(printf '%s\n' "$versions" | awk -F. -v m="$major" '$1==m' | sort -V | tail -n 1)"
+          newest_minor="$(printf '%s\n' "$versions" | awk -F. -v m="$major" -v n="${minor#*.}" '$1==m && $2==n' | sort -V | tail -n 1)"
+          echo "publish_latest=$([[ "$current" == "$newest" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "publish_major=$([[ "$current" == "$newest_major" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "publish_minor=$([[ "$current" == "$newest_minor" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Require successful CI for tagged commit
         env:
@@ -146,9 +149,9 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/qwixx-ai:${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}.${{ steps.version.outputs.patch }}
-            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:{1}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major) || '' }}
-            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:{1}.{2}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
-            ${{ steps.latest.outputs.publish_floating == 'true' && format('{0}/qwixx-ai:latest', secrets.DOCKERHUB_USERNAME) || '' }}
+            ${{ steps.latest.outputs.publish_major == 'true' && format('{0}/qwixx-ai:{1}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major) || '' }}
+            ${{ steps.latest.outputs.publish_minor == 'true' && format('{0}/qwixx-ai:{1}.{2}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
+            ${{ steps.latest.outputs.publish_latest == 'true' && format('{0}/qwixx-ai:latest', secrets.DOCKERHUB_USERNAME) || '' }}
           provenance: mode=max
           sbom: true
 
