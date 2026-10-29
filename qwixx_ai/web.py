@@ -189,7 +189,7 @@ function keyboardMove(e){if(e.defaultPrevented||e.ctrlKey&&e.key.toLowerCase()!=
  else if(e.key.toLowerCase()==='z'&&(e.ctrlKey||e.metaKey)&&state.can_undo_step1){e.preventDefault();backToStep1()}
  else if(e.key.toLowerCase()==='n'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();if(window.confirm('Start a new game?'))reset()}
 }
-document.addEventListener('keydown',keyboardMove);
+if(typeof document.addEventListener==='function')document.addEventListener('keydown',keyboardMove);
 
 let recentChanges=[],recentTimer=null;
 function recordMoveChanges(previous,next){
