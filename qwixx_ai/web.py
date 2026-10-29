@@ -120,6 +120,8 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .game-event.lock{background:#365314;color:#f7fee7}
 .next-roller{font-size:12px;color:var(--muted);margin-left:8px}
 @media(prefers-reduced-motion:reduce){.mini-number.recent-mark,.number-cell.recent-mark{transition:none}}
+
+.move-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;margin:5px 0}.move-toolbar button{padding:5px 9px}.move-toolbar label{white-space:nowrap}.move-toolbar small{color:var(--muted)}
 </style></head><body><h1>Qwixx AI <small id="app-version" style="font-size:.48em;color:#94a3b8;font-weight:600"></small></h1><p><a href="/training">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a highlighted number on your scorecard, or skip a phase.</p>
 <label for="difficulty">AI difficulty</label><select id="difficulty"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="champion" selected>Champion</option></select><button onclick="reset()">New game</button> <span id="account-status">Guest</span> <button onclick="toggleStats()">Your Stats</button> <button id="auth-logout" onclick="logout()" hidden>Sign out</button><div id="auth-login"><label>Email <input id="auth-email" type="email" placeholder="you@example.com"></label><label> Name (new accounts) <input id="auth-name" placeholder="Display name"></label><button onclick="requestCode()">Email me a code</button><div id="verify-box" hidden><label>Six-digit code <input id="auth-code" inputmode="numeric" maxlength="6"></label><button onclick="verifyCode()">Verify & sign in</button></div><p id="auth-message"></p></div><section id="career" class="career-panel" hidden></section><p id="game-error" role="alert" style="background:#7f1d1d;padding:12px;border-radius:8px" hidden></p><div id="status"><p>Loading game…</p></div><div id="boards"></div><h3>Your choices</h3><div id="actions"></div><details><summary>Turn action history (diagnostics)</summary><pre id="game-history" style="white-space:pre-wrap"></pre></details>
 <script>
@@ -173,6 +175,22 @@ function setTheme(v){if(!['dark','light','auto'].includes(v))return;try{localSto
 applyTheme(readTheme());
 if(window.matchMedia){const media=window.matchMedia('(prefers-color-scheme: light)');if(media.addEventListener)media.addEventListener('change',()=>applyTheme(readTheme()))}
 let state, pending=null, gameOverShown=false, thinkingActor=null;
+const QUICK_MARK_KEY='qwixx-quick-mark';
+function quickMarkEnabled(){try{return localStorage.getItem(QUICK_MARK_KEY)==='true'}catch(e){return false}}
+function setQuickMark(value){try{localStorage.setItem(QUICK_MARK_KEY,value?'true':'false')}catch(e){}render()}
+function focusLegalMoves(){const first=document.querySelector('.number-cell.playable');if(first){first.scrollIntoView({behavior:'smooth',block:'center'});first.focus({preventScroll:true})}}
+function keyboardMove(e){if(e.defaultPrevented||e.ctrlKey&&e.key.toLowerCase()!=='z'||e.altKey||e.metaKey&&e.key.toLowerCase()!=='z')return;
+ const target=e.target;if(target&&(target.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)))return;
+ if(document.querySelector('[role="dialog"], [role="alertdialog"]'))return;
+ if(!state||state.done||moving)return;
+ if(e.key==='Enter'&&pending){e.preventDefault();confirmPhase()}
+ else if(e.key==='Escape'&&pending){e.preventDefault();clearSelection()}
+ else if(e.code==='Space'){e.preventDefault();skipPhase()}
+ else if(e.key.toLowerCase()==='z'&&(e.ctrlKey||e.metaKey)&&state.can_undo_step1){e.preventDefault();backToStep1()}
+ else if(e.key.toLowerCase()==='n'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();if(window.confirm('Start a new game?'))reset()}
+}
+if(typeof document.addEventListener==='function')document.addEventListener('keydown',keyboardMove);
+
 let recentChanges=[],recentTimer=null;
 function recordMoveChanges(previous,next){
  if(!previous||!next||!previous.boards||!next.boards)return;
@@ -263,7 +281,9 @@ let moving=false;function showNewPenalties(previous,next){
 }
 async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid&&thinkingActor!==progress.actor){thinkingActor=progress.actor;render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;recordMoveChanges(previous,next);render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;if(state)render()}}
 
-function selectMark(action){if(moving||!state||state.done)return;pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
+function selectMark(action){if(moving||!state||state.done)return;if(quickMarkEnabled()&&action[2]&& !window.confirm('Close this row? This cannot be undone.'))return;
+ if(quickMarkEnabled()){pending=action;act(action);return}
+ pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
 function confirmPhase(){if(pending)act(pending)}
 async function backToStep1(){if(moving||!state||state.done||!state.can_undo_step1)return;moving=true;try{const next=await api('/undo-step1',{session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false;if(state)render()}}
@@ -308,7 +328,7 @@ function render(){if(!state)return;
  if(history){const actions=state.action_history||[];history.textContent=actions.length?actions.slice(-12).map(e=>'Turn '+e.turn+' · '+(e.phase<state.boards.length?'Step 1':'Step 2')+' · '+(e.source==='human'?'You':'AI '+e.actor)+' · '+(e.action?names[e.action[0]]+' '+e.action[1]:'Passed')+' · whites '+e.white_total).join('\\n'):'No moves recorded yet';}
  const choices=state.legal.map(a=>{const c=a[0],n=a[1],details=state.explanations.find(x=>x.move===colors[c]+' '+n),sources=whitePhase?'white '+state.dice[0]+' + white '+state.dice[1]:[0,1].filter(w=>state.dice[w]+state.dice[c+2]===n).map(w=>'white '+(w+1)+' ('+state.dice[w]+') + '+colors[c]+' ('+state.dice[c+2]+')').join(' OR ');return '<li><strong>'+names[c]+' '+n+(a[2]?' 🔒':'')+'</strong> — '+sources+(details?' · +'+details.immediate+' immediate points · skips '+details.skipped:'')+'</li>'}).join('');
  if(state.done){showGameOver();if(!document.getElementById('career').hidden)showStats()}
- document.getElementById('actions').innerHTML=state.done?'<b>Game over. Start a new game.</b>':'<p>Select a highlighted number on your scorecard, then press Mark selected number below your scorecard, or Pass.</p><details class="move-analysis"><summary>Move analysis — '+state.legal.length+' available scorecard moves</summary><ul>'+choices+'</ul><p>Pass using the button below your scorecard. Equivalent dice combinations leading to the same number are shown together.</p></details>';
+ document.getElementById('actions').innerHTML=state.done?'<b>Game over. Start a new game.</b>':'<div class="move-toolbar"><button type="button" onclick="focusLegalMoves()">'+state.legal.length+' legal moves · Show on board</button><label><input type="checkbox" '+(quickMarkEnabled()?'checked':'')+' onchange="setQuickMark(this.checked)"> Quick Mark</label><small>Enter: Mark · Esc: Clear · Space: Pass · Ctrl/Cmd+Z: Undo</small></div><details class="move-analysis"><summary>Move analysis — '+state.legal.length+' available scorecard moves</summary><ul>'+choices+'</ul><p>Pass using the button below your scorecard. Equivalent dice combinations leading to the same number are shown together.</p></details>';
 
 }
 
