@@ -122,6 +122,8 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 @media(prefers-reduced-motion:reduce){.mini-number.recent-mark,.number-cell.recent-mark{transition:none}}
 
 .move-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;margin:5px 0}.move-toolbar button{padding:5px 9px}.move-toolbar label{white-space:nowrap}.move-toolbar small{color:var(--muted)}
+
+html[data-reduced-motion="on"] .ai-thinking-spinner,html[data-reduced-motion="on"] .number-cell.playable{animation:none!important;transition:none!important}.move-assist{font-size:12px;color:var(--muted);margin:4px 0}.move-toolbar select{padding:4px}
 </style></head><body><h1>Qwixx AI <small id="app-version" style="font-size:.48em;color:#94a3b8;font-weight:600"></small></h1><p><a href="/training">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a highlighted number on your scorecard, or skip a phase.</p>
 <label for="difficulty">AI difficulty</label><select id="difficulty"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="champion" selected>Champion</option></select><button onclick="reset()">New game</button> <span id="account-status">Guest</span> <button onclick="toggleStats()">Your Stats</button> <button id="auth-logout" onclick="logout()" hidden>Sign out</button><div id="auth-login"><label>Email <input id="auth-email" type="email" placeholder="you@example.com"></label><label> Name (new accounts) <input id="auth-name" placeholder="Display name"></label><button onclick="requestCode()">Email me a code</button><div id="verify-box" hidden><label>Six-digit code <input id="auth-code" inputmode="numeric" maxlength="6"></label><button onclick="verifyCode()">Verify & sign in</button></div><p id="auth-message"></p></div><section id="career" class="career-panel" hidden></section><p id="game-error" role="alert" style="background:#7f1d1d;padding:12px;border-radius:8px" hidden></p><div id="status"><p>Loading game…</p></div><div id="boards"></div><h3>Your choices</h3><div id="actions"></div><details><summary>Turn action history (diagnostics)</summary><pre id="game-history" style="white-space:pre-wrap"></pre></details>
 <script>
@@ -176,9 +178,15 @@ applyTheme(readTheme());
 if(window.matchMedia){const media=window.matchMedia('(prefers-color-scheme: light)');if(media.addEventListener)media.addEventListener('change',()=>applyTheme(readTheme()))}
 let state, pending=null, gameOverShown=false, thinkingActor=null;
 const QUICK_MARK_KEY='qwixx-quick-mark';
+const SPEED_KEY='qwixx-ai-speed',ASSIST_KEY='qwixx-move-assist',MOTION_KEY='qwixx-reduced-motion';
+function preference(key,fallback){try{return localStorage.getItem(key)||fallback}catch(e){return fallback}}
+function setPreference(key,value){try{localStorage.setItem(key,value)}catch(e){}render()}
+function eventDuration(){return ({fast:450,normal:1100,relaxed:2200})[preference(SPEED_KEY,'normal')]||1100}
+function reducedMotion(){return preference(MOTION_KEY,'system')==='on'||(preference(MOTION_KEY,'system')==='system'&&window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)}
+
 function quickMarkEnabled(){try{return localStorage.getItem(QUICK_MARK_KEY)==='true'}catch(e){return false}}
 function setQuickMark(value){try{localStorage.setItem(QUICK_MARK_KEY,value?'true':'false')}catch(e){}render()}
-function focusLegalMoves(){const first=document.querySelector('.number-cell.playable');if(first){first.scrollIntoView({behavior:'smooth',block:'center'});first.focus({preventScroll:true})}}
+function focusLegalMoves(){const first=document.querySelector('.number-cell.playable');if(first){first.scrollIntoView({behavior:reducedMotion()?'auto':'smooth',block:'center'});first.focus({preventScroll:true})}}
 function keyboardMove(e){if(e.defaultPrevented||e.ctrlKey&&e.key.toLowerCase()!=='z'||e.altKey||e.metaKey&&e.key.toLowerCase()!=='z')return;
  const target=e.target;if(target&&(target.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)))return;
  if(document.querySelector('[role="dialog"], [role="alertdialog"]'))return;
@@ -206,7 +214,7 @@ function recordMoveChanges(previous,next){
  (next.locks||[]).filter(color=>!(previous.locks||[]).includes(color)).forEach(color=>events.push({type:'lock',color:colors.indexOf(color),label:names[colors.indexOf(color)]+' row locked'}));
  recentChanges=events;
  if(recentTimer)clearTimeout(recentTimer);
- recentTimer=setTimeout(()=>{recentChanges=[];if(state)render()},1100);
+ recentTimer=setTimeout(()=>{recentChanges=[];if(state)render()},eventDuration());
 }
 function recentMark(i,c,n){return recentChanges.some(e=>e.type==='mark'&&e.player===i&&e.color===c&&e.number===n)}
 
@@ -313,6 +321,7 @@ function miniCard(board,i){
 function closeGameOver(){document.getElementById('game-over-modal')?.remove()}
 function showGameOver(){if(gameOverShown||!state.done)return;gameOverShown=true;const rankings=state.scores.map((score,i)=>({name:playerNames[i],score})).sort((a,b)=>b.score-a.score);const overlay=document.createElement('div');overlay.id='game-over-modal';overlay.className='game-over-overlay';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Game over');overlay.innerHTML='<div class="game-over-dialog"><h2>🏁 Game over!</h2><p><strong>'+rankings[0].name+' wins!</strong></p><p>'+rankings.map(p=>p.name+': '+p.score).join('<br>')+'</p><button onclick="reset()">Play again</button><button onclick="closeGameOver()">View final scorecards</button></div>';document.body.appendChild(overlay)}
 function render(){if(!state)return;
+ document.documentElement.dataset.reducedMotion=reducedMotion()?'on':'off';
  const roller=playerNames[state.roller]||'AI';const whitePhase=state.phase<state.boards.length;const youRoll=state.roller===0;
  const instruction=state.done?'Game over':whitePhase?'White dice: '+state.dice[0]+' + '+state.dice[1]+' = '+(state.dice[0]+state.dice[1]):'Choose one white die plus a matching colored die.';
  const rollerLabel=youRoll?'YOU':roller;
@@ -326,9 +335,10 @@ function render(){if(!state)return;
  document.getElementById('boards').innerHTML='<div class="game-grid"><div class="human-column"><div class="dice-status">'+diceHtml+'<div class="game-events" role="status" aria-live="polite">'+recentChanges.slice(-4).map(e=>'<span class="game-event '+e.type+'">'+escapeHtml(e.label)+'</span>').join('')+'</div></div>'+card(state.boards[0],0)+controls+'</div><aside class="opponents-column" aria-label="AI opponents">'+state.boards.slice(1).map((board,j)=>miniCard(board,j+1)).join('')+'</aside></div>';
  const history=document.getElementById('game-history');
  if(history){const actions=state.action_history||[];history.textContent=actions.length?actions.slice(-12).map(e=>'Turn '+e.turn+' · '+(e.phase<state.boards.length?'Step 1':'Step 2')+' · '+(e.source==='human'?'You':'AI '+e.actor)+' · '+(e.action?names[e.action[0]]+' '+e.action[1]:'Passed')+' · whites '+e.white_total).join('\\n'):'No moves recorded yet';}
- const choices=state.legal.map(a=>{const c=a[0],n=a[1],details=state.explanations.find(x=>x.move===colors[c]+' '+n),sources=whitePhase?'white '+state.dice[0]+' + white '+state.dice[1]:[0,1].filter(w=>state.dice[w]+state.dice[c+2]===n).map(w=>'white '+(w+1)+' ('+state.dice[w]+') + '+colors[c]+' ('+state.dice[c+2]+')').join(' OR ');return '<li><strong>'+names[c]+' '+n+(a[2]?' 🔒':'')+'</strong> — '+sources+(details?' · +'+details.immediate+' immediate points · skips '+details.skipped:'')+'</li>'}).join('');
+ const assistance=preference(ASSIST_KEY,'off')==='on'&&state.explanations?.length?state.explanations.filter(x=>Number.isFinite(x.immediate)).sort((a,b)=>b.immediate-a.immediate).slice(0,3):[];
+  const choices=state.legal.map(a=>{const c=a[0],n=a[1],details=state.explanations.find(x=>x.move===colors[c]+' '+n),sources=whitePhase?'white '+state.dice[0]+' + white '+state.dice[1]:[0,1].filter(w=>state.dice[w]+state.dice[c+2]===n).map(w=>'white '+(w+1)+' ('+state.dice[w]+') + '+colors[c]+' ('+state.dice[c+2]+')').join(' OR ');return '<li><strong>'+names[c]+' '+n+(a[2]?' 🔒':'')+'</strong> — '+sources+(details?' · +'+details.immediate+' immediate points · skips '+details.skipped:'')+'</li>'}).join('');
  if(state.done){showGameOver();if(!document.getElementById('career').hidden)showStats()}
- document.getElementById('actions').innerHTML=state.done?'<b>Game over. Start a new game.</b>':'<div class="move-toolbar"><button type="button" onclick="focusLegalMoves()">'+state.legal.length+' legal moves · Show on board</button><label><input type="checkbox" '+(quickMarkEnabled()?'checked':'')+' onchange="setQuickMark(this.checked)"> Quick Mark</label><small>Enter: Mark · Esc: Clear · Space: Pass · Ctrl/Cmd+Z: Undo</small></div><details class="move-analysis"><summary>Move analysis — '+state.legal.length+' available scorecard moves</summary><ul>'+choices+'</ul><p>Pass using the button below your scorecard. Equivalent dice combinations leading to the same number are shown together.</p></details>';
+ document.getElementById('actions').innerHTML=state.done?'<b>Game over. Start a new game.</b>':'<div class="move-toolbar"><button type="button" onclick="focusLegalMoves()">'+state.legal.length+' legal moves · Show on board</button><label><input type="checkbox" '+(quickMarkEnabled()?'checked':'')+' onchange="setQuickMark(this.checked)"> Quick Mark</label><label>AI pace <select aria-label="AI feedback pace" onchange="setPreference(SPEED_KEY,this.value)">'+['fast','normal','relaxed'].map(v=>'<option value="'+v+'" '+(preference(SPEED_KEY,'normal')===v?'selected':'')+'>'+v+'</option>').join('')+'</select></label><label>Motion <select aria-label="Motion preference" onchange="setPreference(MOTION_KEY,this.value)">'+['system','on','off'].map(v=>'<option value="'+v+'" '+(preference(MOTION_KEY,'system')===v?'selected':'')+'>'+v+'</option>').join('')+'</select></label><label><input type="checkbox" '+(preference(ASSIST_KEY,'off')==='on'?'checked':'')+' onchange="setPreference(ASSIST_KEY,this.checked?&quot;on&quot;:&quot;off&quot;)"> Move hints</label><small>Enter: Mark · Esc: Clear · Space: Pass · Ctrl/Cmd+Z: Undo</small></div>'+(assistance.length?'<p class="move-assist">Top immediate-point moves: '+assistance.map(x=>escapeHtml(x.move)+' (+'+x.immediate+')').join(' · ')+'</p>':'')+'<details class="move-analysis"><summary>Move analysis — '+state.legal.length+' available scorecard moves</summary><ul>'+choices+'</ul><p>Pass using the button below your scorecard. Equivalent dice combinations leading to the same number are shown together.</p></details>';
 
 }
 
