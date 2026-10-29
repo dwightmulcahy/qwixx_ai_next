@@ -282,7 +282,9 @@ def test_distributed_training_dashboard_remains_embedded():
 def test_game_script_turn_controls_have_valid_concat():
     from qwixx_ai.web import HTML
 
-    assert """+'</p>':'')+'<button class="confirm" """ in HTML
+    assert 'class="move-status"' in HTML
+    assert 'class="move-buttons"' in HTML
+    assert 'onclick="confirmPhase()"' in HTML
     assert 'function render()' in HTML
     assert 'async function reset()' in HTML
 
