@@ -110,6 +110,16 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .compact-move-controls .move-buttons button{margin:0;padding:8px 12px;font-size:14px;white-space:nowrap;min-height:38px}
 .compact-move-controls .move-buttons .confirm{min-width:82px}
 @media(max-width:750px){.compact-move-controls{grid-template-columns:1fr;grid-template-areas:"status" "buttons" "hint"}.compact-move-controls .move-buttons{flex-wrap:wrap}.compact-move-controls .move-buttons button{flex:1 1 auto}}
+
+/* Gameplay clarity: highlight changed AI cells and keep a small nonblocking event strip. */
+.mini-number.recent-mark,.number-cell.recent-mark{outline:3px solid #fef08a;outline-offset:1px;box-shadow:0 0 12px #facc15}
+.mini-row.recent-lock{box-shadow:inset 0 0 0 3px #facc15}
+.game-events{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:5px 0;font-size:12px;min-height:22px}
+.game-event{padding:3px 8px;border-radius:6px;background:#164e63;color:#ecfeff}
+.game-event.strike{background:#78350f;color:#fef3c7}
+.game-event.lock{background:#365314;color:#f7fee7}
+.next-roller{font-size:12px;color:var(--muted);margin-left:8px}
+@media(prefers-reduced-motion:reduce){.mini-number.recent-mark,.number-cell.recent-mark{transition:none}}
 </style></head><body><h1>Qwixx AI <small id="app-version" style="font-size:.48em;color:#94a3b8;font-weight:600"></small></h1><p><a href="/training">Training dashboard</a> · <a href="#rules-faq">Rules & FAQ</a></p><p class="hint">You play seat 1 against three AI opponents. Click a highlighted number on your scorecard, or skip a phase.</p>
 <label for="difficulty">AI difficulty</label><select id="difficulty"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="champion" selected>Champion</option></select><button onclick="reset()">New game</button> <span id="account-status">Guest</span> <button onclick="toggleStats()">Your Stats</button> <button id="auth-logout" onclick="logout()" hidden>Sign out</button><div id="auth-login"><label>Email <input id="auth-email" type="email" placeholder="you@example.com"></label><label> Name (new accounts) <input id="auth-name" placeholder="Display name"></label><button onclick="requestCode()">Email me a code</button><div id="verify-box" hidden><label>Six-digit code <input id="auth-code" inputmode="numeric" maxlength="6"></label><button onclick="verifyCode()">Verify & sign in</button></div><p id="auth-message"></p></div><section id="career" class="career-panel" hidden></section><p id="game-error" role="alert" style="background:#7f1d1d;padding:12px;border-radius:8px" hidden></p><div id="status"><p>Loading game…</p></div><div id="boards"></div><h3>Your choices</h3><div id="actions"></div><details><summary>Turn action history (diagnostics)</summary><pre id="game-history" style="white-space:pre-wrap"></pre></details>
 <script>
@@ -163,10 +173,29 @@ function setTheme(v){if(!['dark','light','auto'].includes(v))return;try{localSto
 applyTheme(readTheme());
 if(window.matchMedia){const media=window.matchMedia('(prefers-color-scheme: light)');if(media.addEventListener)media.addEventListener('change',()=>applyTheme(readTheme()))}
 let state, pending=null, gameOverShown=false, thinkingActor=null;
+let recentChanges=[],recentTimer=null;
+function recordMoveChanges(previous,next){
+ if(!previous||!next||!previous.boards||!next.boards)return;
+ const events=[];
+ next.boards.forEach((board,i)=>{
+  board.rows.forEach((row,c)=>{
+   const before=previous.boards[i]?.rows[c]||[];
+   row.filter(n=>!before.includes(n)).forEach(n=>events.push({player:i,color:c,number:n,type:'mark',label:playerNames[i]+' marked '+names[c]+' '+n}));
+  });
+  const strikes=board.penalties-(previous.boards[i]?.penalties||0);
+  if(strikes>0)events.push({player:i,type:'strike',label:playerNames[i]+' received '+strikes+' strike'+(strikes>1?'s':'')});
+ });
+ (next.locks||[]).filter(color=>!(previous.locks||[]).includes(color)).forEach(color=>events.push({type:'lock',color:colors.indexOf(color),label:names[colors.indexOf(color)]+' row locked'}));
+ recentChanges=events;
+ if(recentTimer)clearTimeout(recentTimer);
+ recentTimer=setTimeout(()=>{recentChanges=[];if(state)render()},1100);
+}
+function recentMark(i,c,n){return recentChanges.some(e=>e.type==='mark'&&e.player===i&&e.color===c&&e.number===n)}
+
 
 async function api(path,body){try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed ('+r.status+')');return j}catch(e){if(path.startsWith('/api/auth/')){const msg=document.getElementById('auth-message');if(msg)msg.textContent='Email verification error: '+e.message+'. Check SMTP settings and container logs.';console.error('Qwixx authentication:',e)}else showGameError(e.message);return null}}
 function showGameError(message){const el=document.getElementById('game-error');if(el){el.hidden=false;el.textContent='Game error: '+message+' — please try New game or reload the page.'}console.error('Qwixx:',message)}
-async function reset(){const next=await api('/reset',{difficulty:document.getElementById('difficulty').value});if(next){document.getElementById('game-error').hidden=true;state=next;pending=null;gameOverShown=false;document.getElementById('game-over-modal')?.remove();render()}}
+async function reset(){const next=await api('/reset',{difficulty:document.getElementById('difficulty').value});if(next){document.getElementById('game-error').hidden=true;state=next;pending=null;recentChanges=[];gameOverShown=false;document.getElementById('game-over-modal')?.remove();render()}}
 let verifiedPlayer=null,verificationEmail='';
 async function loadPlayers(){try{const response=await fetch('/api/auth/me');const data=await response.json();verifiedPlayer=data.player;document.getElementById('account-status').textContent=verifiedPlayer?'Signed in: '+verifiedPlayer.name:'Guest — games will not be saved';document.getElementById('auth-login').hidden=!!verifiedPlayer;document.getElementById('auth-logout').hidden=!verifiedPlayer}catch(e){console.warn('Account unavailable',e)}}
 async function requestCode(){document.getElementById('auth-message').textContent='Requesting verification email…';const email=document.getElementById('auth-email').value.trim();const name=document.getElementById('auth-name').value.trim();const response=await api('/api/auth/request',{email,name:name||null});if(response){verificationEmail=email;document.getElementById('verify-box').hidden=false;document.getElementById('auth-message').textContent='Code sent. Check your email (expires in 10 minutes).'}}
@@ -232,7 +261,7 @@ let moving=false;function showNewPenalties(previous,next){
  const button=document.createElement('button');button.textContent='Continue';button.onclick=()=>overlay.remove();
  dialog.appendChild(button);overlay.appendChild(dialog);document.body.appendChild(overlay);button.focus();
 }
-async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid&&thinkingActor!==progress.actor){thinkingActor=progress.actor;render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;if(state)render()}}
+async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid&&thinkingActor!==progress.actor){thinkingActor=progress.actor;render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;recordMoveChanges(previous,next);render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;if(state)render()}}
 
 function selectMark(action){if(moving||!state||state.done)return;pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
@@ -255,8 +284,8 @@ function miniCard(board,i){
  board.rows.forEach((row,c)=>{
   const nums=c<2?[2,3,4,5,6,7,8,9,10,11,12]:[12,11,10,9,8,7,6,5,4,3,2];
   const last=row.length?nums.indexOf(row[row.length-1]):-1,locked=state.locks.includes(colors[c]);
-  b+='<div class="mini-row '+colors[c]+(locked?' mini-row-locked':'')+'" title="'+(locked?escapeHtml(lockTooltip(colors[c])):'')+'" aria-label="'+names[c]+' row'+(locked?' locked':'')+'">';
-  b+=nums.map((n,j)=>'<span class="mini-number'+(row.includes(n)?' marked':(locked||j<last)?' skipped':'')+'" aria-label="'+names[c]+' '+n+(row.includes(n)?' marked':(locked||j<last)?' skipped':' available')+'">'+n+'</span>').join('');
+  b+='<div class="mini-row '+colors[c]+(locked?' mini-row-locked':'')+(recentChanges.some(e=>e.type==='lock'&&e.color===c)?' recent-lock':'')+'" title="'+(locked?escapeHtml(lockTooltip(colors[c])):'')+'" aria-label="'+names[c]+' row'+(locked?' locked':'')+'">';
+  b+=nums.map((n,j)=>'<span class="mini-number'+(row.includes(n)?' marked':(locked||j<last)?' skipped':'')+(recentMark(i,c,n)?' recent-mark':'')+'" aria-label="'+names[c]+' '+n+(row.includes(n)?' marked':(locked||j<last)?' skipped':' available')+'">'+n+'</span>').join('');
   b+='<span class="mini-lock" aria-label="'+names[c]+(locked?' locked':' unlocked')+'">'+(locked?'🔒':'')+'</span>'+(locked?'<span class="mini-locked-label" title="'+escapeHtml(lockTooltip(colors[c]))+'" aria-label="'+escapeHtml(lockTooltip(colors[c]))+'">🔒 LOCKED</span>':'')+'</div>';
  });
  return b+'<div class="mini-footer"><span>Strikes: '+board.penalties+' / 4</span><span>'+(leading?'Leader':'AI opponent')+'</span></div></section>';
@@ -274,7 +303,7 @@ function render(){if(!state)return;
  const moveHint=youRoll&&!whitePhase&&state.active_marks===0?'Passing now gives you a strike (−5 points).':youRoll&&whitePhase?'A strike only occurs if you pass both opportunities on your roll.':youRoll?'You already marked this roll, so passing Step 2 has no penalty.':'No strike when you pass on another player’s roll.';
  const selectedText=pending?'Selected: '+names[pending[0]]+' '+pending[1]:'Select a highlighted number';
  const controls='<div class="phase-controls compact-move-controls" aria-label="Your move"><div class="move-status"><span class="phase-instruction">'+instruction+'</span><span class="selected-mark" aria-live="polite">'+selectedText+'</span></div><div class="move-buttons"><button class="confirm" onclick="confirmPhase()" '+(!pending||moving||state.done?'disabled':'')+'>✓ Mark</button><button onclick="clearSelection()" '+(!pending||moving||state.done?'disabled':'')+'>Clear</button><button class="skip" onclick="skipPhase()" '+(moving||state.done?'disabled':'')+'>'+(youRoll&&!whitePhase&&state.active_marks===0?'Pass — take strike':'Pass →')+'</button>'+(state.can_undo_step1?'<button onclick="backToStep1()">← Back to Step 1</button>':'')+'</div><div class="move-hint'+(youRoll&&!whitePhase&&state.active_marks===0?' strike-warning':'')+'">'+moveHint+'</div></div>';
- document.getElementById('boards').innerHTML='<div class="game-grid"><div class="human-column"><div class="dice-status">'+diceHtml+'</div>'+card(state.boards[0],0)+controls+'</div><aside class="opponents-column" aria-label="AI opponents">'+state.boards.slice(1).map((board,j)=>miniCard(board,j+1)).join('')+'</aside></div>';
+ document.getElementById('boards').innerHTML='<div class="game-grid"><div class="human-column"><div class="dice-status">'+diceHtml+'<div class="game-events" role="status" aria-live="polite">'+recentChanges.slice(-4).map(e=>'<span class="game-event '+e.type+'">'+escapeHtml(e.label)+'</span>').join('')+'</div></div>'+card(state.boards[0],0)+controls+'</div><aside class="opponents-column" aria-label="AI opponents">'+state.boards.slice(1).map((board,j)=>miniCard(board,j+1)).join('')+'</aside></div>';
  const history=document.getElementById('game-history');
  if(history){const actions=state.action_history||[];history.textContent=actions.length?actions.slice(-12).map(e=>'Turn '+e.turn+' · '+(e.phase<state.boards.length?'Step 1':'Step 2')+' · '+(e.source==='human'?'You':'AI '+e.actor)+' · '+(e.action?names[e.action[0]]+' '+e.action[1]:'Passed')+' · whites '+e.white_total).join('\\n'):'No moves recorded yet';}
  const choices=state.legal.map(a=>{const c=a[0],n=a[1],details=state.explanations.find(x=>x.move===colors[c]+' '+n),sources=whitePhase?'white '+state.dice[0]+' + white '+state.dice[1]:[0,1].filter(w=>state.dice[w]+state.dice[c+2]===n).map(w=>'white '+(w+1)+' ('+state.dice[w]+') + '+colors[c]+' ('+state.dice[c+2]+')').join(' OR ');return '<li><strong>'+names[c]+' '+n+(a[2]?' 🔒':'')+'</strong> — '+sources+(details?' · +'+details.immediate+' immediate points · skips '+details.skipped:'')+'</li>'}).join('');
