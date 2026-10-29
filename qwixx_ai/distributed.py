@@ -352,8 +352,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             if self.path=='/favicon.svg':return self.reply(FAVICON_SVG,ctype='image/svg+xml')
-            if self.path in ('/', '/training'):return self.reply(DASHBOARD_HTML,ctype='text/html; charset=utf-8')
-            if self.path=='/worker.js':return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
+            if self.path in ('/', '/training'):
+                page=DASHBOARD_HTML
+                if not BROWSER_TRAINING_ENABLED:
+                    page=page.replace('<button id="workerToggle" onclick="toggleBrowserWorkers()">Start browser training</button>', '<p>Browser training disabled on this deployment.</p>')
+                return self.reply(page,ctype='text/html; charset=utf-8')
+            if self.path=='/worker.js':
+                if not BROWSER_TRAINING_ENABLED:return self.reply({'error':'Browser training disabled'},403)
+                return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
             if self.path=='/health':return self.reply({'healthy':True})
             if self.path=='/api/stats':return self.reply(self.coord.stats())
             if self.path.startswith('/api/session-progress?'):
