@@ -80,6 +80,25 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .mini-card.ai-active{border:2px solid #60a5fa;box-shadow:0 0 0 2px #60a5fa44}.mini-card.ai-active .mini-header{color:#93c5fd}
 .ai-thinking{display:inline-flex;align-items:center;flex:0 0 auto;gap:9px;padding:7px 11px;margin:0;border:1px solid #60a5fa;border-radius:9px;background:var(--panel);color:var(--text);font-weight:700;animation:thinking-appear .15s ease .15s both}.dice-tray{align-items:center}.phase-controls button:disabled{opacity:.35;filter:grayscale(1);cursor:not-allowed}.ai-thinking-spinner{width:17px;height:17px;border:3px solid #64748b;border-top-color:#60a5fa;border-radius:50%;animation:ai-thinking-spin .75s linear infinite}@keyframes ai-thinking-spin{to{transform:rotate(360deg)}}@keyframes thinking-appear{from{opacity:0}to{opacity:1}}@media(prefers-reduced-motion:reduce){.ai-thinking,.ai-thinking-spinner{animation:none}}
 
+/* Compact dice area: keep turn/step alongside the dice, not stacked above them. */
+.dice-status{padding:9px 12px;margin-bottom:9px}
+.compact-dice-layout{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.compact-turn{flex:0 1 270px;min-width:185px}
+.compact-turn .roller-header{margin:0 0 4px;gap:6px}
+.compact-turn .roller-name{font-size:clamp(16px,2vw,22px);padding:4px 9px}
+.compact-turn .turn-count,.compact-turn .roller-caption{font-size:14px}
+.compact-turn .turn-subtitle{margin:3px 0 0;font-size:13px}
+.dice-status .dice-tray{margin:0;gap:7px;flex:1 1 360px}
+.dice-status .die{width:52px;height:52px;padding:6px;border-radius:11px}
+.dice-status .pip{width:8px;height:8px}
+.dice-status .die-label{font-size:10px}
+.dice-status .die-wrap{gap:2px}
+.dice-status .die.locked-die:after{font-size:26px}
+.mini-card.ai-active,.mini-card.rolling{border:3px solid #39e6ba!important;background:#1b3546;box-shadow:0 0 0 2px #39e6ba66,0 0 22px #39e6ba40}
+.mini-card.ai-active .mini-header,.mini-card.rolling .mini-header{color:#f0fffc;background:#22516a;border-radius:8px;padding:5px 7px}
+.mini-card.ai-inactive{border-color:#526174;opacity:.82}
+.active-ai-badge{display:inline-block;background:#087b63;color:#fff;border:1px solid #7affdc;border-radius:7px;padding:3px 7px;font-size:11px;white-space:nowrap;vertical-align:middle}
+@media(max-width:700px){.compact-turn{flex:1 1 100%}.dice-status .dice-tray{flex-basis:100%}.dice-status .die{width:46px;height:46px}}
 /* Keep action controls compact and in fixed positions across selections and turns. */
 .compact-move-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"status buttons" "hint buttons";gap:3px 12px;align-items:center;padding:8px 12px}
 .compact-move-controls .move-status{grid-area:status;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;min-width:0}
@@ -232,7 +251,7 @@ function card(board,i){let b='<div class="player-panel '+(i!==0&&i!==state.rolle
  b+='<div class="score-footer score-totals"><strong>Result:</strong>'+board.rows.map((row,c)=>{let k=row.length+(state.locks.includes(colors[c])&&row.includes(c<2?12:2)?1:0);return '<span class="total-box '+colors[c]+'">'+(k*(k+1)/2)+'</span>'}).join('<span>+</span>')+'<span>−</span><span class="total-box penalty">'+(board.penalties*5)+'</span><span>=</span><span class="total-box final">'+state.scores[i]+'</span></div></section></div>';return b}
 function miniCard(board,i){
  const leading=state.scores[i]===Math.max(...state.scores);
- let b='<section class="mini-card'+(state.roller===i?' rolling':'')+(leading?' leading':'')+(moving&&thinkingActor===i?' ai-active':'')+'" aria-label="'+playerNames[i]+' miniature scorecard"><div class="mini-header"><span>'+playerNames[i]+(moving&&thinkingActor===i?' · Thinking…':state.roller===i?' · Rolling':'')+'</span><span>'+state.scores[i]+' pts'+(leading?' ★':'')+'</span></div>';
+ let b='<section class="mini-card'+(state.roller===i?' rolling':'')+(leading?' leading':'')+(moving&&thinkingActor===i?' ai-active':'')+(state.roller!==i&&!(moving&&thinkingActor===i)?' ai-inactive':'')+'" aria-label="'+playerNames[i]+' miniature scorecard"><div class="mini-header"><span>'+playerNames[i]+(moving&&thinkingActor===i?' <strong class="active-ai-badge">● THINKING</strong>':state.roller===i?' <strong class="active-ai-badge">🎲 ROLLING</strong>':'')+'</span><span>'+state.scores[i]+' pts'+(leading?' ★':'')+'</span></div>';
  board.rows.forEach((row,c)=>{
   const nums=c<2?[2,3,4,5,6,7,8,9,10,11,12]:[12,11,10,9,8,7,6,5,4,3,2];
   const last=row.length?nums.indexOf(row[row.length-1]):-1,locked=state.locks.includes(colors[c]);
@@ -250,7 +269,7 @@ function render(){if(!state)return;
  const rollerLabel=youRoll?'YOU':roller;
  const turnHeader='<div class="roller-header"><span class="turn-count">TURN '+(state.turn+1)+'</span><span class="roller-name '+(youRoll?'human':'opponent')+'">'+rollerLabel+'</span><span class="roller-caption">'+(youRoll?'are rolling':'is rolling')+'</span></div>';
   const thinkingHtml=moving?'<span class="ai-thinking" role="status" aria-live="polite"><span class="ai-thinking-spinner" aria-hidden="true"></span><span>'+(thinkingActor===null?'AI opponents thinking…':playerNames[thinkingActor]+' thinking…')+'</span></span>':'';
-  const diceHtml=turnHeader+'<p class="turn-subtitle">'+(whitePhase?'Step 1 · Everyone may mark the white-dice total':'Step 2 · Roller may use white + colored dice')+'</p><div class="dice-tray">'+state.dice.map((n,i)=>die(n,i<2?'white':colors[i-2],i<2?'White '+(i+1):names[i-2],i>=2&&(!youRoll||whitePhase||state.locks.includes(colors[i-2])) )).join('')+thinkingHtml+'</div>';
+  const diceHtml='<div class="compact-dice-layout"><div class="compact-turn">'+turnHeader+'<p class="turn-subtitle">'+(whitePhase?'Step 1 · White dice total':'Step 2 · White + colored dice')+'</p></div><div class="dice-tray">'+state.dice.map((n,i)=>die(n,i<2?'white':colors[i-2],i<2?'White '+(i+1):names[i-2],i>=2&&(!youRoll||whitePhase||state.locks.includes(colors[i-2]))  )).join('')+thinkingHtml+'</div></div>';
  document.getElementById('status').innerHTML='';
  const moveHint=youRoll&&!whitePhase&&state.active_marks===0?'Passing now gives you a strike (−5 points).':youRoll&&whitePhase?'A strike only occurs if you pass both opportunities on your roll.':youRoll?'You already marked this roll, so passing Step 2 has no penalty.':'No strike when you pass on another player’s roll.';
  const selectedText=pending?'Selected: '+names[pending[0]]+' '+pending[1]:'Select a highlighted number';
