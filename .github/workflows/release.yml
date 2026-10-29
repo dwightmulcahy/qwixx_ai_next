@@ -123,6 +123,8 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: qwixx-ai:release-check
+          build-args: |
+            QWIXX_GIT_VERSION=${{ steps.version.outputs.tag }}
 
       - name: Container smoke test
         run: |
@@ -152,6 +154,7 @@ jobs:
             ${{ steps.latest.outputs.publish_major == 'true' && format('{0}/qwixx-ai:{1}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major) || '' }}
             ${{ steps.latest.outputs.publish_minor == 'true' && format('{0}/qwixx-ai:{1}.{2}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
             ${{ steps.latest.outputs.publish_latest == 'true' && format('{0}/qwixx-ai:latest', secrets.DOCKERHUB_USERNAME) || '' }}
+          build-args: QWIXX_GIT_VERSION=${{ steps.version.outputs.tag }}
           provenance: mode=max
           sbom: true
 
