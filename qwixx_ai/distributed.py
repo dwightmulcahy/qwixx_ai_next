@@ -25,6 +25,15 @@ MAX_BODY=350_000
 MAX_PENDING=500
 
 
+def env_enabled(name, default=True):
+    return os.getenv(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+INFERENCE_ONLY=env_enabled('QWIXX_INFERENCE_ONLY', False)
+TRAINING_ENABLED=env_enabled('QWIXX_TRAINING_ENABLED', True) and not INFERENCE_ONLY
+BROWSER_TRAINING_ENABLED=env_enabled('QWIXX_BROWSER_TRAINING_ENABLED', True) and TRAINING_ENABLED
+
+
 class Coordinator:
     def __init__(self):
         self.lock=threading.RLock();self.rng=random.Random()
@@ -79,6 +88,7 @@ class Coordinator:
                 self.version=state.get('version',0)
             except Exception as exc:print('Trainer state recovery failed:',exc,flush=True)
         self.stop=threading.Event();self.paused=threading.Event()
+        if not TRAINING_ENABLED:self.paused.set()
         self.log=ROOT/'metrics.jsonl'
     def ticket(self):
         with self.lock:
@@ -254,7 +264,7 @@ class Coordinator:
                 if isinstance(layer,nn.Linear):layers.append({'w':layer.weight.detach().tolist(),'b':layer.bias.detach().tolist()})
             return {'version':self.version,'layers':layers,'observation_size':self.obs_size}
     def stats(self):
-        return {'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
+        return {'training_enabled':TRAINING_ENABLED,'browser_training_enabled':BROWSER_TRAINING_ENABLED,'inference_only':INFERENCE_ONLY,'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run_rollouts(self):
         while not self.stop.is_set():
             if self.paused.is_set():self.stop.wait(.1);continue
@@ -342,8 +352,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             if self.path=='/favicon.svg':return self.reply(FAVICON_SVG,ctype='image/svg+xml')
-            if self.path in ('/', '/training'):return self.reply(DASHBOARD_HTML,ctype='text/html; charset=utf-8')
-            if self.path=='/worker.js':return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
+            if self.path in ('/', '/training'):
+                page=DASHBOARD_HTML
+                if not BROWSER_TRAINING_ENABLED:
+                    page=page.replace('<button id="workerToggle" onclick="toggleBrowserWorkers()">Start browser training</button>', '<p>Browser training disabled on this deployment.</p>')
+                return self.reply(page,ctype='text/html; charset=utf-8')
+            if self.path=='/worker.js':
+                if not BROWSER_TRAINING_ENABLED:return self.reply({'error':'Browser training disabled'},403)
+                return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
             if self.path=='/health':return self.reply({'healthy':True})
             if self.path=='/api/stats':return self.reply(self.coord.stats())
             if self.path.startswith('/api/session-progress?'):
@@ -371,6 +387,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(self.coord.player_stats.stats(pid,query.get('difficulty',[None])[0]))
             if self.path=='/api/policy':return self.reply(self.coord.policy_export())
             if self.path=='/api/job':
+                if not BROWSER_TRAINING_ENABLED:return self.reply({'error':'Browser training disabled'},403)
                 if self.limited(training=True):return self.reply({'error':'Rate limit exceeded'},429)
                 if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
                 job=self.coord.ticket();job['rolls']=rolls_for(job['seed']);return self.reply(job)
@@ -385,7 +402,9 @@ class Handler(BaseHTTPRequestHandler):
                 if n<1 or n>1000:raise ValueError('Invalid body size')
                 command=json.loads(self.rfile.read(n)).get('command')
                 if command=='pause':self.coord.paused.set()
-                elif command=='resume':self.coord.paused.clear()
+                elif command=='resume':
+                    if not TRAINING_ENABLED:raise ValueError('Training disabled by server configuration')
+                    self.coord.paused.clear()
                 elif command=='checkpoint':self.coord.checkpoint()
                 elif command=='rollback':
                     with self.coord.lock:
@@ -422,6 +441,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(result)
             except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
         if self.path!='/api/submit':self.send_error(404);return
+        if not BROWSER_TRAINING_ENABLED:return self.reply({'error':'Browser training disabled'},403)
         if self.limited(training=True):return self.reply({'error':'Rate limit exceeded'},429)
         if not self.authorized_worker():return self.reply({'error':'Unauthorized worker'},403)
         try:
@@ -437,8 +457,9 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--host',default='127.0.0.1');p.add_argument('--port',type=int,default=8765);a=p.parse_args()
     torch.set_num_threads(max(1,int(os.getenv('QWIXX_TORCH_THREADS','2'))))
     c=Coordinator();Handler.coord=c
-    trainer=threading.Thread(target=c.run,daemon=True,name='central-trainer');trainer.start()
-    worker_count=max(1,min(4,int(os.getenv('QWIXX_CENTRAL_WORKERS','2'))))
+    trainer=threading.Thread(target=c.run,daemon=True,name='central-trainer') if TRAINING_ENABLED else None
+    if trainer:trainer.start()
+    worker_count=max(0,min(4,int(os.getenv('QWIXX_CENTRAL_WORKERS','2')))) if TRAINING_ENABLED else 0
     workers=[threading.Thread(target=c.run_rollouts,daemon=True,name=f'rollout-{i}') for i in range(worker_count)]
     for worker in workers:worker.start()
     server=ThreadingHTTPServer((a.host,a.port),Handler)
@@ -448,6 +469,6 @@ def main():
     finally:
         c.stop.set();server.server_close()
         for worker in workers:worker.join(timeout=10)
-        trainer.join(timeout=10)
+        if trainer:trainer.join(timeout=10)
         c.checkpoint();c.db.close()
 if __name__=='__main__':main()

@@ -1,0 +1,40 @@
+# QNAP Container Station: gameplay without background model training
+services:
+  qwixx:
+    image: dwightmulcahy/qwixx-ai:latest
+    container_name: qwixx-ai
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8765}:8765"
+    env_file:
+      - /share/Data/config/qwixx-ai/qwixx-ai.env
+    environment:
+      TZ: America/Costa_Rica
+      QWIXX_DATA: /app/runs
+      QWIXX_INFERENCE_ONLY: "true"
+      QWIXX_TRAINING_ENABLED: "false"
+      QWIXX_BROWSER_TRAINING_ENABLED: "false"
+      QWIXX_CENTRAL_WORKERS: "0"
+      QWIXX_TORCH_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - /share/Data/config/qwixx-ai:/app/runs
+    cpus: 1.0
+    mem_limit: 2g
+    memswap_limit: 2g
+    pids_limit: 128
+    cpu_shares: 256
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "25m"
+        max-file: "5"
