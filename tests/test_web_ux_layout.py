@@ -79,6 +79,24 @@ def test_gameplay_preferences_are_in_a_dialog():
     assert ".gameplay-overlay[hidden]{display:none!important}" in html
 
 
+def test_toolbar_order_compact_dice_and_clean_lock_glyphs():
+    html = html_source()
+    setup = html.split("document.addEventListener('DOMContentLoaded'", 1)[1].split("})();", 1)[0]
+    assert setup.index("button[onclick=\"reset()\"]") < setup.index("gameplayButton.textContent='⚙ Gameplay'") < setup.index("themeLabel.textContent='Appearance'")
+    for expected in (
+        ".gameplay-button{margin-left:0}",
+        ".dice-status{position:relative;padding:7px 10px",
+        ".dice-status .die{width:46px;height:46px",
+        ".dice-move-controls{border-top:1px solid var(--border);margin-top:6px;padding-top:6px",
+        ".lock-glyph{position:relative",
+        ".lock-glyph.ready:before",
+        ".lock-cell{border-radius:8px",
+        "class=\"lock-glyph",
+    ):
+        assert expected in html, expected
+    assert "?'🔒':row.length>=5?'🔓':'♙'" not in html
+
+
 def test_legal_moves_are_visually_prominent():
     html = html_source()
     assert ".number-cell.playable{cursor:pointer;z-index:2;background:#fff!important" in html
@@ -184,6 +202,7 @@ vm.runInContext("setTheme('invalid')",context);
 assert.equal(stored['qwixx-theme'],'dark');
 const rows=[[],[],[],[]];
 const boards=Array.from({length:4},()=>({rows:rows.map(x=>[...x]),penalties:0}));
+boards[0].rows[1]=[2,3,4,5,6];
 boards[1].rows[0]=[2,4];
 boards[1].rows[1]=[2,3,4,5,6];
 boards[2].rows[1]=[2,3,4];
@@ -202,6 +221,8 @@ assert.match(board,/class="dice-move-controls"/);
 assert.match(board,/Enter: Mark · Esc: Clear · Space: Pass · Ctrl\/Cmd\+Z: Undo/);
 assert.match(board,/class="move-analysis-panel"/);
 assert.ok(board.indexOf('class="scorecard"') < board.indexOf('class="move-analysis-panel"'));
+assert.match(board,/lock-cell lock-ready/);
+assert.match(board,/lock-glyph ready/);
 assert.equal(el("status").innerHTML,"");
 assert.match(board,/class="opponents-column"/);
 assert.match(board,/AI-Sir Rolls-a-Lot/);
@@ -238,6 +259,12 @@ const tied=el("boards").innerHTML;
 assert.equal((tied.match(/T-1st of 4/g)||[]).length>=2,true);
 assert.match(tied,/3rd of 4/);
 assert.match(tied,/4th of 4/);
+vm.runInContext("state.done=true;render()",context);
+const ended=el("boards").innerHTML;
+assert.match(ended,/Game complete/);
+assert.match(ended,/Final scores are shown below/);
+assert.doesNotMatch(ended,/onclick="confirmPhase\(\)"/);
+assert.doesNotMatch(ended,/onclick="skipPhase\(\)"/);
 """
     script = tmp_path / "ux_check.js"
     game = tmp_path / "game.js"
