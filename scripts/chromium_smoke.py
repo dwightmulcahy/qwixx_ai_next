@@ -47,6 +47,12 @@ def main():
                     dice_tile = page.locator(".dice-status")
                     assert dice_tile.locator(".dice-move-controls").is_visible()
                     assert "Enter: Mark" in dice_tile.inner_text()
+                    assert dice_tile.bounding_box()["height"] < 230
+                    toolbar_order = page.evaluate(
+                        "Array.from(document.querySelector('.game-toolbar').children).map("
+                        "el => (el.textContent || '').trim())"
+                    )
+                    assert toolbar_order.index("New game") < toolbar_order.index("⚙ Gameplay") < toolbar_order.index("AppearanceDarkLightAuto (system)")
                     assert page.locator(".human-column .scorecard").is_visible()
                     assert page.locator(".human-column .move-analysis-panel").is_visible()
                     assert page.evaluate(
