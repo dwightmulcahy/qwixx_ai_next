@@ -264,7 +264,7 @@ def test_game_tabs_are_present_and_preserve_game_nodes():
     for name in ("Play", "Account & Stats", "Training", "Rules & FAQ"):
         assert name in HTML
     assert "Move Analysis" not in HTML.split("const sections=", 1)[1].split(";", 1)[0]
-    for node in ("status", "boards", "actions", "auth-login", "career", "training-dashboard"):
+    for node in ("status", "boards", "auth-login", "career", "training-dashboard", "gameplay-modal"):
         assert node in HTML
     assert "window.showTab=activate" in HTML
     assert "activate('play')" in HTML
@@ -298,8 +298,11 @@ def test_game_script_turn_controls_have_valid_concat():
     from qwixx_ai.web import HTML
 
     assert 'class="move-status"' in HTML
+    assert 'class="dice-move-controls"' in HTML
     assert 'class="move-buttons"' in HTML
     assert 'onclick="confirmPhase()"' in HTML
+    assert 'function maybeAutoPass()' in HTML
+    assert '⚡ AUTO PASS · No legal marks available' in HTML
     assert 'function render()' in HTML
     assert 'async function reset()' in HTML
 
@@ -333,6 +336,15 @@ def test_unavailable_white_total_skips_without_confirmation():
     assert "No legal marks available. Skipping gives you a strike" not in HTML
     assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
     assert "A strike only occurs if you pass both opportunities on your roll." in HTML
+
+
+def test_auto_pass_only_targets_human_phases_with_zero_legal_moves():
+    from qwixx_ai.web import HTML
+
+    assert "state.actor===0&&state.legal.length===0" in HTML
+    assert "state.actor!==0||state.legal.length!==0" in HTML
+    assert "autoPassTimer=setTimeout" in HTML
+    assert "act(null)" in HTML
 
 
 def test_penalty_popup_identifies_players_and_point_loss():
