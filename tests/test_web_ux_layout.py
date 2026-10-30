@@ -72,6 +72,7 @@ def test_first_visit_guest_or_registration_prompt():
         "sessionStorage.getItem(PLAY_MODE_KEY)",
         "sessionStorage.setItem(PLAY_MODE_KEY,mode)",
         "function maybeShowWelcome()",
+        ".welcome-overlay[hidden]{display:none!important}",
         "Registered User — ",
         "function chooseGuestPlay()",
         "function choosePrimaryPlay()",
