@@ -261,13 +261,28 @@ def test_player_stats_route_accepts_plain_url_and_filters():
 def test_game_tabs_are_present_and_preserve_game_nodes():
     from qwixx_ai.web import HTML
 
-    for name in ("Play", "Account & Stats", "Move Analysis", "Training", "Rules & FAQ"):
+    for name in ("Play", "Account & Stats", "Training", "Rules & FAQ"):
         assert name in HTML
+    assert "Move Analysis" not in HTML.split("const sections=", 1)[1].split(";", 1)[0]
     for node in ("status", "boards", "actions", "auth-login", "career", "training-dashboard"):
         assert node in HTML
     assert "window.showTab=activate" in HTML
     assert "activate('play')" in HTML
     assert "panels.play.appendChild" in HTML
+
+
+def test_guest_mode_overrides_registered_cookie_without_logging_out():
+    import inspect
+    from qwixx_ai.distributed import Handler
+
+    source = inspect.getsource(Handler)
+    assert "guest=data.get('guest',False)" in source
+    assert "None if guest else self.player_id()" in source
+    assert "if type(guest) is not bool:raise ValueError('guest must be boolean')" in source
+    # Guest sessions intentionally have no player_id, so an existing auth cookie
+    # must not make their moves/progress fail ownership checks.
+    assert "entry[2] is not None and entry[2]!=self.player_id()" in source
+    assert "entry[2] is not None and entry[2] != self.player_id()" in source
 
 
 def test_distributed_training_dashboard_remains_embedded():

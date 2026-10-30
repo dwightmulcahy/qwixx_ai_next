@@ -50,6 +50,48 @@ def test_theme_controls_and_invariant_row_colors():
     assert "themeSelect.value=readTheme()" in html
 
 
+
+def test_move_analysis_lives_in_play_and_thinking_does_not_reflow():
+    html = html_source()
+    assert "['analysis','Move Analysis']" not in html
+    assert "panels.play.appendChild(choices)" in html
+    assert "panels.play.appendChild(history.closest('details'))" in html
+    assert ".dice-status{position:relative" in html
+    assert ".ai-thinking{position:absolute" in html
+    assert "diceHtml+thinkingHtml+'<div class=\"game-events\"" in html
+    assert ".join('')+thinkingHtml+'</div></div>'" not in html
+    for preference in ("Quick Mark", "AI pace", "Motion", "Move hints"):
+        assert preference in html
+
+
+def test_first_visit_guest_or_registration_prompt():
+    html = html_source()
+    for expected in (
+        'id="welcome-modal"', 'Guest Play', 'Register / Sign in',
+        "const PLAY_MODE_KEY='qwixx-play-mode'",
+        "sessionStorage.getItem(PLAY_MODE_KEY)",
+        "sessionStorage.setItem(PLAY_MODE_KEY,mode)",
+        "function maybeShowWelcome()",
+        ".welcome-overlay[hidden]{display:none!important}",
+        "Registered User — ",
+        "function chooseGuestPlay()",
+        "function choosePrimaryPlay()",
+        "setPlayMode('guest')",
+        "setPlayMode('registered')",
+        "guest:playMode()==='guest'",
+        "showTab('account')",
+        "document.getElementById('auth-email')?.focus()",
+        "if(maybeShowWelcome())return null",
+    ):
+        assert expected in html, expected
+    # Guest choice is session-only; there must be no persistent guest cookie.
+    assert "qwixx_guest_choice" not in html
+    assert "Max-Age=31536000" not in html
+    assert "rememberGuestChoice" not in html
+    # The browser never reads the secure authentication cookie directly.
+    assert "qwixx_auth" not in html
+
+
 def test_live_browser_render_and_theme_behavior(tmp_path):
     node = shutil.which("node")
     if node is None:
@@ -74,12 +116,13 @@ const stored={};
 const context={
  console,Math,Array,JSON,Promise,
  localStorage:{getItem:k=>stored[k]??null,setItem:(k,v)=>{stored[k]=v}},
+ sessionStorage:{getItem:k=>stored['session:'+k]??null,setItem:(k,v)=>{stored['session:'+k]=v},removeItem:k=>{delete stored['session:'+k]}},
  document:{documentElement:{dataset:{}},getElementById:el},
  window:{matchMedia:()=>({matches:true,addEventListener:()=>{}})},
  fetch:()=>Promise.reject(Error('offline')),
 };
 vm.createContext(context);
-vm.runInContext(code.replace('loadPlayers().then(reset).catch(e=>showGameError(e.message));',''),context);
+vm.runInContext(code.replace("loadPlayers().then(()=>{if(!authAvailable)return reset();if(maybeShowWelcome())return null;return reset()}).catch(e=>showGameError(e.message));",''),context);
 assert.equal(context.document.documentElement.dataset.theme,'dark');
 vm.runInContext("setTheme('light')",context);
 assert.equal(context.document.documentElement.dataset.theme,'light');

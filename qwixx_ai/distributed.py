@@ -367,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
                 sid=parse_qs(urlsplit(self.path).query).get('session_id',[''])[0]
                 entry=self.coord.sessions.get(sid)
                 if not entry:return self.reply({'error':'Session not found'},404)
-                if entry[2]!=self.player_id():return self.reply({'error':'Forbidden'},403)
+                if entry[2] is not None and entry[2]!=self.player_id():return self.reply({'error':'Forbidden'},403)
                 return self.reply({'actor':entry[0].thinking_actor})
             if self.path.startswith('/api/history'):
                 try:limit=int(self.path.split('limit=',1)[1].split('&',1)[0]) if 'limit=' in self.path else 100
@@ -432,10 +432,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ('/reset','/move','/undo-step1'):
             try:
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
-                if self.path=='/reset':result=self.coord.new_session(data.get('difficulty','champion'),self.player_id())
+                if self.path=='/reset':
+                    guest=data.get('guest',False)
+                    if type(guest) is not bool:raise ValueError('guest must be boolean')
+                    result=self.coord.new_session(data.get('difficulty','champion'),None if guest else self.player_id())
                 else:
                     a=data.get('action');a=None if a is None else tuple(a);sid=data.get('session_id','');entry=self.coord.sessions.get(sid)
-                    if entry and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
+                    if entry and entry[2] is not None and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
                     if self.path=='/undo-step1':result=self.coord.session_undo_step1(sid,data.get('expected_turn'),data.get('expected_phase'))
                     else:result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
                 return self.reply(result)
