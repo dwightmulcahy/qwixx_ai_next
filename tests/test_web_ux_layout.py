@@ -51,17 +51,53 @@ def test_theme_controls_and_invariant_row_colors():
 
 
 
-def test_move_analysis_lives_in_play_and_thinking_does_not_reflow():
+def test_play_layout_keeps_turn_controls_with_dice_and_analysis_below_scorecard():
     html = html_source()
     assert "['analysis','Move Analysis']" not in html
-    assert "panels.play.appendChild(choices)" in html
     assert "panels.play.appendChild(history.closest('details'))" in html
     assert ".dice-status{position:relative" in html
     assert ".ai-thinking{position:absolute" in html
-    assert "diceHtml+thinkingHtml+'<div class=\"game-events\"" in html
-    assert ".join('')+thinkingHtml+'</div></div>'" not in html
-    for preference in ("Quick Mark", "AI pace", "Motion", "Move hints"):
-        assert preference in html
+    assert 'class="dice-move-controls"' in html
+    assert "diceHtml+thinkingHtml+controls" in html
+    assert "card(state.boards[0],0)+analysisHtml" in html
+    assert 'class="move-analysis-panel"' in html
+    assert "Enter: Mark · Esc: Clear · Space: Pass · Ctrl/Cmd+Z: Undo" in html
+    assert "#actions" not in html
+    assert "document.getElementById('actions')" not in html
+
+
+def test_gameplay_preferences_are_in_a_dialog():
+    html = html_source()
+    for expected in (
+        'id="gameplay-modal"', "Gameplay preferences", "⚙ Gameplay",
+        "function openGameplayPreferences()", "function closeGameplayPreferences()",
+        "function syncGameplayPreferences()", 'id="pref-quick-mark"',
+        'id="pref-ai-pace"', 'id="pref-motion"', 'id="pref-move-hints"',
+        "Quick Mark", "AI pace", "Motion", "Move hints",
+    ):
+        assert expected in html, expected
+    assert ".gameplay-overlay[hidden]{display:none!important}" in html
+
+
+def test_legal_moves_are_visually_prominent():
+    html = html_source()
+    assert ".number-cell.playable{cursor:pointer;z-index:2;background:#fff!important" in html
+    assert "0 0 18px 5px #22c55e99" in html
+    assert "transform:scale(1.04)" in html
+    assert "@keyframes available-pulse" in html
+
+
+def test_auto_passes_when_human_has_no_legal_mark():
+    html = html_source()
+    for expected in (
+        "const noLegal=!state.done&&state.actor===0&&state.legal.length===0",
+        "⚡ AUTO PASS · No legal marks available",
+        "function maybeAutoPass()",
+        "state.actor!==0||state.legal.length!==0",
+        "act(null)",
+        "maybeAutoPass();",
+    ):
+        assert expected in html, expected
 
 
 def test_first_visit_guest_or_registration_prompt():
@@ -114,10 +150,10 @@ const elements={};
 function el(id){return elements[id]??=( {innerHTML:'',textContent:'',hidden:true} )}
 const stored={};
 const context={
- console,Math,Array,JSON,Promise,
+ console,Math,Array,JSON,Promise,setTimeout,clearTimeout,setInterval,clearInterval,
  localStorage:{getItem:k=>stored[k]??null,setItem:(k,v)=>{stored[k]=v}},
  sessionStorage:{getItem:k=>stored['session:'+k]??null,setItem:(k,v)=>{stored['session:'+k]=v},removeItem:k=>{delete stored['session:'+k]}},
- document:{documentElement:{dataset:{}},getElementById:el},
+ document:{documentElement:{dataset:{}},getElementById:el,querySelector:()=>null},
  window:{matchMedia:()=>({matches:true,addEventListener:()=>{}})},
  fetch:()=>Promise.reject(Error('offline')),
 };
@@ -148,6 +184,10 @@ assert.equal((board.match(/class="mini-card/g)||[]).length,3);
 assert.match(board,/class="human-column"/);
 assert.match(board,/class="dice-status"/);
 assert.match(board,/dice-tray/);
+assert.match(board,/class="dice-move-controls"/);
+assert.match(board,/Enter: Mark · Esc: Clear · Space: Pass · Ctrl\/Cmd\+Z: Undo/);
+assert.match(board,/class="move-analysis-panel"/);
+assert.ok(board.indexOf('class="scorecard"') < board.indexOf('class="move-analysis-panel"'));
 assert.equal(el("status").innerHTML,"");
 assert.match(board,/class="opponents-column"/);
 assert.match(board,/AI-Sir Rolls-a-Lot/);

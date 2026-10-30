@@ -44,6 +44,26 @@ def main():
                     page.locator("#boards").wait_for(timeout=30000)
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.evaluate("sessionStorage.getItem('qwixx-play-mode')") == "guest"
+                    dice_tile = page.locator(".dice-status")
+                    assert dice_tile.locator(".dice-move-controls").is_visible()
+                    assert "Enter: Mark" in dice_tile.inner_text()
+                    assert page.locator(".human-column .scorecard").is_visible()
+                    assert page.locator(".human-column .move-analysis-panel").is_visible()
+                    assert page.evaluate(
+                        "document.querySelector('.human-column .scorecard').compareDocumentPosition("
+                        "document.querySelector('.human-column .move-analysis-panel')) & Node.DOCUMENT_POSITION_FOLLOWING"
+                    )
+                    gameplay = page.get_by_role("button", name="⚙ Gameplay")
+                    assert gameplay.is_visible()
+                    gameplay.click()
+                    preferences = page.locator("#gameplay-modal")
+                    preferences.wait_for(state="visible", timeout=5000)
+                    assert preferences.get_by_text("Quick Mark", exact=True).is_visible()
+                    assert preferences.get_by_text("AI pace", exact=True).is_visible()
+                    assert preferences.get_by_text("Motion", exact=True).is_visible()
+                    assert preferences.get_by_text("Move hints", exact=True).is_visible()
+                    preferences.get_by_role("button", name="Close gameplay preferences").click()
+                    assert preferences.is_hidden()
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
