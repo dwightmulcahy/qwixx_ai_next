@@ -50,6 +50,20 @@ def test_theme_controls_and_invariant_row_colors():
     assert "themeSelect.value=readTheme()" in html
 
 
+
+def test_move_analysis_lives_in_play_and_thinking_does_not_reflow():
+    html = html_source()
+    assert "['analysis','Move Analysis']" not in html
+    assert "panels.play.appendChild(choices)" in html
+    assert "panels.play.appendChild(history.closest('details'))" in html
+    assert ".dice-status{position:relative" in html
+    assert ".ai-thinking{position:absolute" in html
+    assert "diceHtml+thinkingHtml+'<div class=\"game-events\"" in html
+    assert ".join('')+thinkingHtml+'</div></div>'" not in html
+    for preference in ("Quick Mark", "AI pace", "Motion", "Move hints"):
+        assert preference in html
+
+
 def test_live_browser_render_and_theme_behavior(tmp_path):
     node = shutil.which("node")
     if node is None:
