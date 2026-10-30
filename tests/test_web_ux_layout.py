@@ -64,6 +64,23 @@ def test_move_analysis_lives_in_play_and_thinking_does_not_reflow():
         assert preference in html
 
 
+def test_first_visit_guest_or_registration_prompt():
+    html = html_source()
+    for expected in (
+        'id="welcome-modal"', 'Guest Play', 'Register / Sign in',
+        "const WELCOME_COOKIE='qwixx_guest_choice'",
+        "function hasGuestChoice()", "function rememberGuestChoice()",
+        "Max-Age=31536000", "SameSite=Lax",
+        "function maybeShowWelcome()", "!authAvailable||verifiedPlayer||hasGuestChoice()",
+        "function chooseGuestPlay()", "function chooseRegistration()",
+        "showTab('account')", "document.getElementById('auth-email')?.focus()",
+        "loadPlayers().then(()=>{maybeShowWelcome();return reset()})",
+    ):
+        assert expected in html, expected
+    # The browser never reads the secure authentication cookie directly.
+    assert "qwixx_auth" not in html
+
+
 def test_live_browser_render_and_theme_behavior(tmp_path):
     node = shutil.which("node")
     if node is None:
@@ -93,7 +110,7 @@ const context={
  fetch:()=>Promise.reject(Error('offline')),
 };
 vm.createContext(context);
-vm.runInContext(code.replace('loadPlayers().then(reset).catch(e=>showGameError(e.message));',''),context);
+vm.runInContext(code.replace('loadPlayers().then(()=>{maybeShowWelcome();return reset()}).catch(e=>showGameError(e.message));',''),context);
 assert.equal(context.document.documentElement.dataset.theme,'dark');
 vm.runInContext("setTheme('light')",context);
 assert.equal(context.document.documentElement.dataset.theme,'light');
