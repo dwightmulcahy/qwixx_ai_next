@@ -100,6 +100,19 @@ def test_auto_passes_when_human_has_no_legal_mark():
         assert expected in html, expected
 
 
+def test_live_rank_and_lock_ready_indicators():
+    html = html_source()
+    for expected in (
+        "function ordinal(n)", "function playerRank(i)", "function rankBadge(i",
+        "function lockReadyRows(board)", "LOCK READY", "lock-threat-badge",
+        "mini-row.lock-ready", "mini-lock.lock-ready", "lock-cell.lock-ready",
+        "Position: '+playerRank(i).label",
+    ):
+        assert expected in html, expected
+    assert "state.scores.filter(s=>s>score).length" in html
+    assert "row.length>=5&&!state.locks.includes" in html
+
+
 def test_first_visit_guest_or_registration_prompt():
     html = html_source()
     for expected in (
@@ -172,6 +185,7 @@ assert.equal(stored['qwixx-theme'],'dark');
 const rows=[[],[],[],[]];
 const boards=Array.from({length:4},()=>({rows:rows.map(x=>[...x]),penalties:0}));
 boards[1].rows[0]=[2,4];
+boards[1].rows[1]=[2,3,4,5,6];
 boards[2].rows[1]=[2,3,4];
 boards[3].penalties=2;
 const initial={boards,scores:[10,15,12,8],roller:1,phase:0,turn:3,
@@ -191,6 +205,13 @@ assert.ok(board.indexOf('class="scorecard"') < board.indexOf('class="move-analys
 assert.equal(el("status").innerHTML,"");
 assert.match(board,/class="opponents-column"/);
 assert.match(board,/AI-Sir Rolls-a-Lot/);
+assert.match(board,/3rd of 4/);
+assert.match(board,/1st of 4/);
+assert.match(board,/2nd of 4/);
+assert.match(board,/4th of 4/);
+assert.match(board,/LOCK READY · YELLOW/);
+assert.match(board,/mini-row yellow lock-ready/);
+assert.match(board,/mini-lock lock-ready/);
 assert.match(board,/Red 3 skipped/);
 assert.match(board,/Red locked/);
 assert.match(board,/Strikes: 2 \/ 4/);
@@ -212,6 +233,11 @@ vm.runInContext("moving=true;render()",context);
 assert.match(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
 vm.runInContext("moving=false;render()",context);
 assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
+vm.runInContext("state.scores=[10,10,5,0];state.phase=0;state.roller=1;render()",context);
+const tied=el("boards").innerHTML;
+assert.equal((tied.match(/T-1st of 4/g)||[]).length>=2,true);
+assert.match(tied,/3rd of 4/);
+assert.match(tied,/4th of 4/);
 """
     script = tmp_path / "ux_check.js"
     game = tmp_path / "game.js"
