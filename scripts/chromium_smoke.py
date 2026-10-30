@@ -36,8 +36,17 @@ def main():
                     errors = []
                     page.on("pageerror", lambda error: errors.append(str(error)))
                     page.goto("http://127.0.0.1:18765/", wait_until="domcontentloaded")
+                    welcome = page.locator("#welcome-modal")
+                    welcome.wait_for(state="visible", timeout=30000)
+                    assert page.get_by_role("button", name="Guest Play").is_visible()
+                    assert page.get_by_role("button", name="Register / Sign in").is_visible()
+                    page.get_by_role("button", name="Guest Play").click()
                     page.locator("#boards").wait_for(timeout=30000)
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
+                    assert page.evaluate("sessionStorage.getItem('qwixx-play-mode')") == "guest"
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
+                    assert page.locator("#welcome-modal").is_hidden()
                     assert page.locator("body").inner_text().strip()
                     assert not errors, errors
                 finally:
