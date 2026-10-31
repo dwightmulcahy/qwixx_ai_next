@@ -99,6 +99,58 @@ def main():
                     preferences.get_by_role("button", name="Close gameplay preferences").click()
                     assert preferences.is_hidden()
 
+                    # New Game offers a normal roll or a server-selected optimal opening roll.
+                    old_session = page.evaluate("state.session_id")
+                    page.get_by_role("button", name="New game").click()
+                    new_game = page.locator("#new-game-modal")
+                    new_game.wait_for(state="visible", timeout=5000)
+                    assert new_game.get_by_role("button", name="Random first roll").is_visible()
+                    assert new_game.get_by_role("button", name="Find optimal first roll").is_visible()
+                    new_game.get_by_role("button", name="Find optimal first roll").click()
+                    page.wait_for_function(
+                        "(old) => state && state.session_id && state.session_id !== old",
+                        arg=old_session,
+                        timeout=10000,
+                    )
+                    assert new_game.is_hidden()
+                    assert page.evaluate(
+                        """() => state.legal.some(a => {
+                            const order = a[0] < 2
+                                ? [2,3,4,5,6,7,8,9,10,11,12]
+                                : [12,11,10,9,8,7,6,5,4,3,2];
+                            return order.indexOf(a[1]) < 3;
+                        })"""
+                    )
+
+                    # The human mark paints before the AI thinking indicator appears.
+                    page.evaluate(
+                        """() => {
+                            state.actor = 0;
+                            state.roller = 0;
+                            state.phase = 0;
+                            state.done = false;
+                            state.legal = [[0,2,false]];
+                            state.boards[0].rows[0] = [];
+                            pending = [0,2,false];
+                            moving = false;
+                            thinkingActor = null;
+                            thinkingVisible = false;
+                            optimisticAction = null;
+                            api = async () => new Promise(() => {});
+                            render();
+                            confirmPhase();
+                        }"""
+                    )
+                    assert page.locator(".number-cell.optimistic-mark").is_visible()
+                    assert page.locator(".ai-thinking").count() == 0
+                    page.wait_for_function("document.querySelector('.ai-thinking') !== null", timeout=3000)
+                    assert page.locator(".number-cell.optimistic-mark").is_visible()
+
+                    # Reload clears the intentionally stalled test move.
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
+                    assert page.locator("#welcome-modal").is_hidden()
+
                     # Passing despite a legal mark and taking a strike uses the styled confirmation dialog.
                     page.evaluate(
                         """() => {
