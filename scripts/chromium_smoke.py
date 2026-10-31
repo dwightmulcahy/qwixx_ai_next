@@ -89,6 +89,13 @@ def main():
                     assert preferences.get_by_text("AI pace", exact=True).is_visible()
                     assert preferences.get_by_text("Motion", exact=True).is_visible()
                     assert preferences.get_by_text("Move hints", exact=True).is_visible()
+                    assert preferences.get_by_text("Auto Pass", exact=True).is_visible()
+                    auto_pass = preferences.locator("#pref-auto-pass")
+                    assert auto_pass.is_checked()
+                    auto_pass.uncheck()
+                    assert page.evaluate("localStorage.getItem('qwixx-auto-pass')") == "off"
+                    auto_pass.check()
+                    assert page.evaluate("localStorage.getItem('qwixx-auto-pass')") == "on"
                     preferences.get_by_role("button", name="Close gameplay preferences").click()
                     assert preferences.is_hidden()
                     page.reload(wait_until="domcontentloaded")
