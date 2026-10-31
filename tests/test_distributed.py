@@ -302,7 +302,10 @@ def test_game_script_turn_controls_have_valid_concat():
     assert 'class="move-buttons"' in HTML
     assert 'onclick="confirmPhase()"' in HTML
     assert 'function maybeAutoPass()' in HTML
+    assert "AUTO_PASS_KEY='qwixx-auto-pass'" in HTML
+    assert 'id="pref-auto-pass"' in HTML
     assert '⚡ AUTO PASS · No legal marks available' in HTML
+    assert 'No legal marks · Pass required' in HTML
     assert 'function render()' in HTML
     assert 'async function reset()' in HTML
 
@@ -342,6 +345,7 @@ def test_auto_pass_only_targets_human_phases_with_zero_legal_moves():
     from qwixx_ai.web import HTML
 
     assert "state.actor===0&&state.legal.length===0" in HTML
+    assert "preference(AUTO_PASS_KEY,'on')!=='on'" in HTML
     assert "state.actor!==0||state.legal.length!==0" in HTML
     assert "autoPassTimer=setTimeout" in HTML
     assert "act(null)" in HTML
