@@ -241,12 +241,15 @@ def test_training_dashboard_link_and_status():
     assert "Training ${x.paused?'PAUSED':'ACTIVE'}" in DASHBOARD_HTML
 
 
-def test_step_two_strike_warning_is_inline_without_popup():
+def test_step_two_strike_warning_confirms_only_when_legal_marks_exist():
     from qwixx_ai.web import HTML
 
     assert "Passing now gives you a strike (−5 points)." in HTML
-    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
-    assert "window.confirm('No legal marks available." not in HTML
+    assert "function shouldConfirmPenaltyPass()" in HTML
+    assert "state.legal.length>0" in HTML
+    assert "Take a missed-throw penalty?" in HTML
+    assert "Pass anyway (−5)" in HTML
+    assert "if(shouldConfirmPenaltyPass()){confirmPenaltyPass();return}act(null)" in HTML
 
 
 def test_player_stats_route_accepts_plain_url_and_filters():
@@ -302,6 +305,9 @@ def test_game_script_turn_controls_have_valid_concat():
     assert 'class="move-buttons"' in HTML
     assert 'onclick="confirmPhase()"' in HTML
     assert 'function maybeAutoPass()' in HTML
+    assert 'id="decision-modal"' in HTML
+    assert "function confirmLockAction(action)" in HTML
+    assert "function confirmPenaltyPass()" in HTML
     assert "AUTO_PASS_KEY='qwixx-auto-pass'" in HTML
     assert 'id="pref-auto-pass"' in HTML
     assert '⚡ AUTO PASS · No legal marks available' in HTML
@@ -349,6 +355,21 @@ def test_auto_pass_only_targets_human_phases_with_zero_legal_moves():
     assert "state.actor!==0||state.legal.length!==0" in HTML
     assert "autoPassTimer=setTimeout" in HTML
     assert "act(null)" in HTML
+
+
+def test_lock_confirmation_warns_when_second_lock_would_end_game():
+    from qwixx_ai.web import HTML
+
+    for expected in (
+        "function projectedLockScores(action)",
+        "function remainingWhiteCanChange(action)",
+        "secondLock=newDistinct&&state.locks.length===1",
+        "This is the second locked row and will end the game.",
+        "Projected final scores",
+        "scores can still change",
+    ):
+        assert expected in HTML, expected
+    assert "window.confirm('Close this row?" not in HTML
 
 
 def test_penalty_popup_identifies_players_and_point_loss():
