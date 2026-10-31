@@ -101,18 +101,34 @@ def main():
 
                     # New Game offers a normal roll or a server-selected optimal opening roll.
                     old_session = page.evaluate("state.session_id")
+                    page.evaluate(
+                        """() => {
+                            const originalApi = api;
+                            api = async (...args) => {
+                                if (args[0] === '/reset' && args[1]?.optimal_first_roll) {
+                                    await new Promise(resolve => setTimeout(resolve, 350));
+                                }
+                                return originalApi(...args);
+                            };
+                        }"""
+                    )
                     page.get_by_role("button", name="New game").click()
                     new_game = page.locator("#new-game-modal")
                     new_game.wait_for(state="visible", timeout=5000)
                     assert new_game.get_by_role("button", name="Random first roll").is_visible()
                     assert new_game.get_by_role("button", name="Find optimal first roll").is_visible()
                     new_game.get_by_role("button", name="Find optimal first roll").click()
+                    finding_roll = page.locator("#finding-roll-modal")
+                    finding_roll.wait_for(state="visible", timeout=5000)
+                    assert finding_roll.get_by_text("Finding optimal first roll…", exact=True).is_visible()
+                    assert "leftmost three numbers" in finding_roll.inner_text()
                     page.wait_for_function(
                         "(old) => state && state.session_id && state.session_id !== old",
                         arg=old_session,
                         timeout=10000,
                     )
                     assert new_game.is_hidden()
+                    assert finding_roll.is_hidden()
                     assert page.evaluate(
                         """() => state.legal.some(a => {
                             const order = a[0] < 2
@@ -187,6 +203,8 @@ def main():
                     )
                     decision.wait_for(state="visible", timeout=5000)
                     assert decision.get_by_text("Lock the Yellow row?", exact=True).is_visible()
+                    assert "Who can close this row?" in decision.inner_text()
+                    assert "will close if you continue" in decision.inner_text()
                     assert "second locked row" in decision.inner_text()
                     assert "Projected final scores" in decision.inner_text()
                     decision.get_by_role("button", name="Cancel").click()
