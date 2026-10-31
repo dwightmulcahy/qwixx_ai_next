@@ -83,7 +83,7 @@ def test_gameplay_preferences_are_in_a_dialog():
 def test_toolbar_order_compact_dice_and_clean_lock_glyphs():
     html = html_source()
     setup = html.split("document.addEventListener('DOMContentLoaded'", 1)[1].split("})();", 1)[0]
-    assert setup.index("button[onclick=\"reset()\"]") < setup.index("gameplayButton.textContent='⚙ Gameplay'") < setup.index("themeLabel.textContent='Appearance'")
+    assert setup.index("'#new-game-button'") < setup.index("gameplayButton.textContent='⚙ Gameplay'") < setup.index("themeLabel.textContent='Appearance'")
     for expected in (
         ".gameplay-button{margin-left:0}",
         ".dice-status{position:relative;padding:7px 10px",
@@ -109,6 +109,34 @@ def test_dice_tile_reserves_stable_desktop_height():
         ".game-events{height:17px;overflow:hidden;flex-wrap:nowrap}",
         ".compact-turn .roller-header{margin:0 0 2px;gap:5px;flex-wrap:nowrap",
         ".dice-move-controls .move-status{grid-area:status;display:flex;flex-wrap:nowrap",
+    ):
+        assert expected in html, expected
+
+
+def test_new_game_dialog_offers_optimal_first_roll():
+    html = html_source()
+    for expected in (
+        'id="new-game-button"', 'onclick="openNewGameDialog()"',
+        'id="new-game-modal"', "Start a new game?", "Random first roll",
+        "Find optimal first roll", "function openNewGameDialog()",
+        "function startNewGame(optimalFirstRoll)",
+        "optimal_first_roll:!!optimalFirstRoll",
+        "function opening_supports_two_edge_marks(game)",
+        "def optimal_opening_game",
+    ):
+        assert expected in html, expected
+    assert "ORDER[a[0]].index(a[1])<3" in html
+
+
+def test_mark_renders_before_thinking_indicator():
+    html = html_source()
+    for expected in (
+        "optimisticAction=null", "thinkingVisible=false",
+        "function nextBrowserPaint()", "optimisticAction=a===null?null:a",
+        "if(optimisticAction){render();await nextBrowserPaint()}",
+        "thinkingVisible=true;render()",
+        "moving&&thinkingVisible?",
+        "optimistic-mark",
     ):
         assert expected in html, expected
 
