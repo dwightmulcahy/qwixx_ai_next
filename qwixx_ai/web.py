@@ -81,14 +81,14 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .ai-thinking{position:absolute;top:8px;right:10px;z-index:5;display:inline-flex;align-items:center;gap:9px;padding:7px 11px;margin:0;border:1px solid #60a5fa;border-radius:9px;background:var(--panel);color:var(--text);font-weight:700;box-shadow:0 3px 12px #0006;pointer-events:none;animation:thinking-appear .15s ease .15s both}.dice-tray{align-items:center}.phase-controls button:disabled{opacity:.35;filter:grayscale(1);cursor:not-allowed}.ai-thinking-spinner{width:17px;height:17px;border:3px solid #64748b;border-top-color:#60a5fa;border-radius:50%;animation:ai-thinking-spin .75s linear infinite}@keyframes ai-thinking-spin{to{transform:rotate(360deg)}}@keyframes thinking-appear{from{opacity:0}to{opacity:1}}@media(prefers-reduced-motion:reduce){.ai-thinking,.ai-thinking-spinner{animation:none}}
 
 /* Compact dice area: keep turn/step alongside the dice, not stacked above them. */
-.dice-status{position:relative;padding:7px 10px;margin-bottom:8px}
-.compact-dice-layout{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.compact-turn{flex:0 1 235px;min-width:170px}
-.compact-turn .roller-header{margin:0 0 2px;gap:5px}
-.compact-turn .roller-name{font-size:clamp(15px,1.7vw,19px);padding:3px 7px;border-width:1px}
-.compact-turn .turn-count,.compact-turn .roller-caption{font-size:12px}
-.compact-turn .turn-subtitle{margin:2px 0 0;font-size:11px}
-.dice-status .dice-tray{margin:0;gap:5px;flex:1 1 330px}
+.dice-status{position:relative;padding:7px 10px;margin-bottom:8px;box-sizing:border-box}
+.compact-dice-layout{display:grid;grid-template-columns:270px minmax(0,1fr);align-items:center;gap:10px}
+.compact-turn{min-width:0;overflow:hidden}
+.compact-turn .roller-header{margin:0 0 2px;gap:5px;flex-wrap:nowrap;min-width:0}
+.compact-turn .roller-name{font-size:clamp(15px,1.7vw,18px);padding:3px 7px;border-width:1px;max-width:175px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.compact-turn .turn-count,.compact-turn .roller-caption{font-size:12px;white-space:nowrap}
+.compact-turn .turn-subtitle{margin:2px 0 0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dice-status .dice-tray{margin:0;gap:5px;min-width:0;flex-wrap:nowrap;overflow:hidden}
 .dice-status .die{width:46px;height:46px;padding:5px;border-radius:9px}
 .dice-status .pip{width:7px;height:7px}
 .dice-status .die-label{font-size:9px}
@@ -98,25 +98,26 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .mini-card.ai-active .mini-header,.mini-card.rolling .mini-header{color:#f0fffc;background:#22516a;border-radius:8px;padding:5px 7px}
 .mini-card.ai-inactive{border-color:#526174;opacity:.82}
 .active-ai-badge{display:inline-block;background:#087b63;color:#fff;border:1px solid #7affdc;border-radius:7px;padding:3px 7px;font-size:11px;white-space:nowrap;vertical-align:middle}
-@media(max-width:700px){.compact-turn{flex:1 1 100%}.dice-status .dice-tray{flex-basis:100%}.dice-status .die{width:42px;height:42px}.ai-thinking{top:6px;right:7px;padding:5px 7px}.ai-thinking>span:last-child{display:none}}
+@media(min-width:761px){.dice-status{height:152px;overflow:hidden}.compact-dice-layout{height:58px}.dice-move-controls{height:51px;box-sizing:border-box;grid-template-rows:30px 15px}.game-events{height:17px;overflow:hidden;flex-wrap:nowrap}.game-event{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:42%}}
+@media(max-width:760px){.dice-status{height:auto;overflow:visible}.compact-dice-layout{display:flex;flex-wrap:wrap}.compact-turn{flex:1 1 100%}.compact-turn .roller-header{flex-wrap:wrap}.compact-turn .roller-name{max-width:none}.dice-status .dice-tray{flex-basis:100%;flex-wrap:wrap;overflow:visible}.dice-status .die{width:42px;height:42px}.ai-thinking{top:6px;right:7px;padding:5px 7px}.ai-thinking>span:last-child{display:none}}
 /* Keep the current move controls inside the dice tile so the active-turn UI stays together. */
 .dice-move-controls{border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"status buttons" "hint shortcuts";gap:3px 9px;align-items:center}
-.dice-move-controls .move-status{grid-area:status;display:flex;flex-wrap:wrap;gap:3px 9px;align-items:center;min-width:0}
-.dice-move-controls .phase-instruction{font-size:13px;font-weight:750}
-.dice-move-controls .selected-mark{font-size:11px;color:var(--muted);white-space:nowrap}
-.dice-move-controls .move-hint{grid-area:hint;font-size:11px;color:var(--muted);min-height:0;line-height:1.25}
+.dice-move-controls .move-status{grid-area:status;display:flex;flex-wrap:nowrap;gap:3px 9px;align-items:center;min-width:0;overflow:hidden}
+.dice-move-controls .phase-instruction{font-size:13px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dice-move-controls .selected-mark{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dice-move-controls .move-hint{grid-area:hint;font-size:11px;color:var(--muted);min-height:0;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dice-move-controls .move-hint.strike-warning{color:#fbbf24}
 .dice-move-controls .move-buttons{grid-area:buttons;display:flex;align-items:center;gap:5px;flex-wrap:nowrap}
 .dice-move-controls .move-buttons button{margin:0;padding:6px 10px;font-size:13px;white-space:nowrap;min-height:32px}
 .dice-move-controls .move-buttons .confirm{min-width:74px}.dice-move-controls button:disabled{opacity:.35;filter:grayscale(1);cursor:not-allowed}.game-ended-status{grid-area:buttons;color:var(--muted);font-size:12px;font-weight:800;white-space:nowrap}
-.dice-shortcuts{grid-area:shortcuts;text-align:right;color:var(--muted);font-size:10px;white-space:nowrap}
+.dice-shortcuts{grid-area:shortcuts;text-align:right;color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .auto-pass-status{grid-area:buttons;background:#0f766e;border:1px solid #5eead4;color:#ecfeff;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:900;letter-spacing:.03em;white-space:nowrap}
 @media(max-width:760px){.dice-move-controls{grid-template-columns:1fr;grid-template-areas:"status" "buttons" "hint" "shortcuts"}.dice-move-controls .move-buttons{flex-wrap:wrap}.dice-move-controls .move-buttons button{flex:1 1 auto}.dice-shortcuts{text-align:left;white-space:normal}.auto-pass-status{white-space:normal}}
 
 /* Gameplay clarity: highlight changed AI cells and keep a small nonblocking event strip. */
 .mini-number.recent-mark,.number-cell.recent-mark{outline:3px solid #fef08a;outline-offset:1px;box-shadow:0 0 12px #facc15}
 .mini-row.recent-lock{box-shadow:inset 0 0 0 3px #facc15}
-.game-events{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:3px 0 0;font-size:11px;min-height:0}
+.game-events{display:flex;flex-wrap:nowrap;align-items:center;gap:5px;margin:3px 0 0;font-size:11px;min-height:17px;max-height:17px;overflow:hidden}
 .game-event{padding:3px 8px;border-radius:6px;background:#164e63;color:#ecfeff}
 .game-event.strike{background:#78350f;color:#fef3c7}
 .game-event.lock{background:#365314;color:#f7fee7}
