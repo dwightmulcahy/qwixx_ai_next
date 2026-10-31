@@ -102,7 +102,10 @@ def test_strike_when_roller_passes_both_phases_even_if_legal_moves_exist():
 
 def test_white_dice_skip_has_no_confirmation():
     assert "Pass on the white dice total" not in HTML
-    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
+    assert "function shouldConfirmPenaltyPass()" in HTML
+    assert "state.phase===state.boards.length" in HTML
+    assert "state.active_marks===0&&state.legal.length>0" in HTML
+    assert "function skipPhase(){if(!state||state.done||moving)return;if(shouldConfirmPenaltyPass()){confirmPenaltyPass();return}act(null)}" in HTML
 
 
 def test_training_rate_limit_is_separate_from_general_limit():
