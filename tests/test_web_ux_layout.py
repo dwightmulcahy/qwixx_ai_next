@@ -113,6 +113,40 @@ def test_dice_tile_reserves_stable_desktop_height():
         assert expected in html, expected
 
 
+def test_penalty_pass_and_lock_use_styled_confirmation_dialogs():
+    html = html_source()
+    for expected in (
+        'id="decision-modal"', 'role="alertdialog"', ".decision-overlay[hidden]{display:none!important}",
+        "function openDecision(", "function confirmDecision()", "function cancelDecision()",
+        "function shouldConfirmPenaltyPass()", "state.legal.length>0",
+        "Take a missed-throw penalty?", "Pass anyway (−5)",
+        "function confirmLockAction(action)", "Lock the '+names[action[0]]+' row?",
+        "function projectedLockScores(action)", "function remainingWhiteCanChange(action)",
+        "Projected final scores", "second locked row", "would finish",
+    ):
+        assert expected in html, expected
+    assert "window.confirm('Close this row?" not in html
+
+
+def test_penalty_pass_confirmation_only_applies_when_pass_would_cost_points():
+    html = html_source()
+    assert "state.actor===0&&state.phase===state.boards.length&&state.active_marks===0&&state.legal.length>0" in html
+    assert "if(shouldConfirmPenaltyPass()){confirmPenaltyPass();return}act(null)" in html
+
+
+def test_game_ending_lock_warning_accounts_for_remaining_white_decisions():
+    html = html_source()
+    for expected in (
+        "newDistinct=!state.locks.includes(color)",
+        "secondLock=newDistinct&&state.locks.length===1",
+        "state.phase>=n-1",
+        "remainingWhiteCanChange(action)",
+        "Remaining players can still change the scores.",
+        "No remaining player has a legal white-dice mark, so these scores are final.",
+    ):
+        assert expected in html, expected
+
+
 def test_legal_moves_are_visually_prominent():
     html = html_source()
     assert ".number-cell.playable{cursor:pointer;z-index:2;background:#fff!important" in html
@@ -198,7 +232,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const code=fs.readFileSync(process.argv[2],'utf8');
 const elements={};
-function el(id){return elements[id]??=( {innerHTML:'',textContent:'',hidden:true} )}
+function el(id){return elements[id]??=( {innerHTML:'',textContent:'',hidden:true,className:'',focus:()=>{}} )}
 const stored={};
 const context={
  console,Math,Array,JSON,Promise,setTimeout,clearTimeout,setInterval,clearInterval,
@@ -295,6 +329,33 @@ stored['qwixx-auto-pass']='on';
 vm.runInContext("render();if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}",context);
 const automaticPass=el("boards").innerHTML;
 assert.match(automaticPass,/⚡ AUTO PASS · No legal marks available/);
+
+// Passing with a legal mark available on the active player's second step must confirm.
+vm.runInContext("state.phase=state.boards.length;state.actor=0;state.roller=0;state.active_marks=0;state.legal=[[0,6,false]];state.scores=[20,25,18,12];moving=false;skipPhase()",context);
+assert.equal(el("decision-modal").hidden,false);
+assert.equal(el("decision-title").textContent,"Take a missed-throw penalty?");
+assert.match(el("decision-body").innerHTML,/legal mark/);
+assert.match(el("decision-body").innerHTML,/−5 point penalty/);
+assert.equal(el("decision-confirm").textContent,"Pass anyway (−5)");
+vm.runInContext("cancelDecision()",context);
+assert.equal(el("decision-modal").hidden,true);
+
+// A second lock that ends the game with no remaining white actions shows final projected standings.
+vm.runInContext("state.phase=state.boards.length;state.actor=0;state.roller=0;state.locks=['red'];state.white_locks=[];state.legal=[[1,12,true]];state.boards[0].rows[1]=[2,3,4,5,6];state.boards[1].rows[2]=[12,11,10,9,8,7,6,5,4];pending=[1,12,true];confirmPhase()",context);
+assert.equal(el("decision-modal").hidden,false);
+assert.match(el("decision-body").innerHTML,/second locked row/);
+assert.match(el("decision-body").innerHTML,/will end the game/);
+assert.match(el("decision-body").innerHTML,/Projected final scores/);
+assert.match(el("decision-body").innerHTML,/would finish/);
+vm.runInContext("cancelDecision()",context);
+
+// During an earlier white-dice decision, remaining players may still change the final scores.
+vm.runInContext("state.phase=0;state.actor=0;state.roller=0;state.dice=[6,6,1,1,1,1];state.locks=['red'];state.white_locks=[];state.legal=[[1,12,true]];state.boards[1].rows[1]=[2,3,4,5,6];pending=[1,12,true];confirmPhase()",context);
+assert.equal(el("decision-modal").hidden,false);
+assert.match(el("decision-body").innerHTML,/scores can still change/);
+assert.doesNotMatch(el("decision-body").innerHTML,/Projected final scores/);
+vm.runInContext("cancelDecision()",context);
+
 vm.runInContext("state.done=true;render()",context);
 const ended=el("boards").innerHTML;
 assert.match(ended,/Game complete/);
