@@ -72,8 +72,9 @@ def test_gameplay_preferences_are_in_a_dialog():
         'id="gameplay-modal"', "Gameplay preferences", "⚙ Gameplay",
         "function openGameplayPreferences()", "function closeGameplayPreferences()",
         "function syncGameplayPreferences()", 'id="pref-quick-mark"',
-        'id="pref-ai-pace"', 'id="pref-motion"', 'id="pref-move-hints"',
-        "Quick Mark", "AI pace", "Motion", "Move hints",
+        'id="pref-ai-pace"', 'id="pref-motion"', 'id="pref-move-hints"', 'id="pref-auto-pass"',
+        "Quick Mark", "AI pace", "Motion", "Move hints", "Auto Pass",
+        "Automatically pass when no legal mark is available.",
     ):
         assert expected in html, expected
     assert ".gameplay-overlay[hidden]{display:none!important}" in html
@@ -120,11 +121,15 @@ def test_legal_moves_are_visually_prominent():
     assert "@keyframes available-pulse" in html
 
 
-def test_auto_passes_when_human_has_no_legal_mark():
+def test_auto_pass_is_a_gameplay_preference():
     html = html_source()
     for expected in (
-        "const noLegal=!state.done&&state.actor===0&&state.legal.length===0",
+        "AUTO_PASS_KEY='qwixx-auto-pass'",
+        'id="pref-auto-pass"',
+        "preference(AUTO_PASS_KEY,'on')==='on'",
+        "preference(AUTO_PASS_KEY,'on')!=='on'",
         "⚡ AUTO PASS · No legal marks available",
+        "No legal marks · Pass required",
         "function maybeAutoPass()",
         "state.actor!==0||state.legal.length!==0",
         "act(null)",
@@ -280,6 +285,16 @@ const tied=el("boards").innerHTML;
 assert.equal((tied.match(/T-1st of 4/g)||[]).length>=2,true);
 assert.match(tied,/3rd of 4/);
 assert.match(tied,/4th of 4/);
+stored['qwixx-auto-pass']='off';
+vm.runInContext("state.actor=0;state.legal=[];state.done=false;moving=false;render()",context);
+const manualPass=el("boards").innerHTML;
+assert.match(manualPass,/No legal marks · Pass required/);
+assert.match(manualPass,/onclick="skipPhase\(\)"/);
+assert.doesNotMatch(manualPass,/⚡ AUTO PASS/);
+stored['qwixx-auto-pass']='on';
+vm.runInContext("render();if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}",context);
+const automaticPass=el("boards").innerHTML;
+assert.match(automaticPass,/⚡ AUTO PASS · No legal marks available/);
 vm.runInContext("state.done=true;render()",context);
 const ended=el("boards").innerHTML;
 assert.match(ended,/Game complete/);
