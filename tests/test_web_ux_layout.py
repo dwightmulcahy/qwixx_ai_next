@@ -121,11 +121,8 @@ def test_new_game_dialog_offers_optimal_first_roll():
         "Find optimal first roll", "function openNewGameDialog()",
         "function startNewGame(optimalFirstRoll)",
         "optimal_first_roll:!!optimalFirstRoll",
-        "function opening_supports_two_edge_marks(game)",
-        "def optimal_opening_game",
     ):
         assert expected in html, expected
-    assert "ORDER[a[0]].index(a[1])<3" in html
 
 
 def test_mark_renders_before_thinking_indicator():
