@@ -121,6 +121,9 @@ def test_new_game_dialog_offers_optimal_first_roll():
         "Find optimal first roll", "function openNewGameDialog()",
         "function startNewGame(optimalFirstRoll)",
         "optimal_first_roll:!!optimalFirstRoll",
+        'id="finding-roll-modal"', "Finding optimal first roll…",
+        "function showFindingOptimalRoll()", "function hideFindingOptimalRoll()",
+        "showFindingOptimalRoll();await nextBrowserPaint()",
     ):
         assert expected in html, expected
 
@@ -151,6 +154,22 @@ def test_penalty_pass_and_lock_use_styled_confirmation_dialogs():
     ):
         assert expected in html, expected
     assert "window.confirm('Close this row?" not in html
+
+
+def test_lock_dialog_lists_same_roll_lock_participants():
+    html = html_source()
+    for expected in (
+        "function lockParticipants(action)",
+        "function lockParticipantsHtml(action)",
+        "Who can close this row?",
+        "will close if you continue",
+        "already closed this roll",
+        "can also close this roll",
+        "No other player can close this row on the current white-dice total.",
+        "e.turn===currentTurn",
+        "for(let phase=state.phase+1;phase<state.boards.length;phase++)",
+    ):
+        assert expected in html, expected
 
 
 def test_penalty_pass_confirmation_only_applies_when_pass_would_cost_points():
@@ -379,6 +398,19 @@ vm.runInContext("state.phase=0;state.actor=0;state.roller=0;state.dice=[6,6,1,1,
 assert.equal(el("decision-modal").hidden,false);
 assert.match(el("decision-body").innerHTML,/scores can still change/);
 assert.doesNotMatch(el("decision-body").innerHTML,/Projected final scores/);
+vm.runInContext("cancelDecision()",context);
+
+// Same-roll lock dialog identifies everyone who already closed or can still close the row.
+vm.runInContext("state.turn=7;state.phase=1;state.actor=0;state.roller=3;state.dice=[6,6,1,1,1,1];state.locks=['yellow'];state.white_locks=['yellow'];state.action_history=[{turn:8,phase:0,actor:3,action:[1,12,true]}];state.boards[0].rows[1]=[2,3,4,5,6];state.boards[1].rows[1]=[2,3,4,5,6];state.boards[2].rows[1]=[2,3,4,5,6];pending=[1,12,true];confirmPhase()",context);
+const participants=el("decision-body").innerHTML;
+assert.match(participants,/Who can close this row\?/);
+assert.match(participants,/You/);
+assert.match(participants,/will close if you continue/);
+assert.match(participants,/AI-Count von Qwixx/);
+assert.match(participants,/already closed this roll/);
+assert.match(participants,/AI-Sir Rolls-a-Lot/);
+assert.match(participants,/can also close this roll/);
+assert.match(participants,/AI-Dicey McDiceface/);
 vm.runInContext("cancelDecision()",context);
 
 vm.runInContext("state.done=true;render()",context);
