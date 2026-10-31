@@ -90,29 +90,48 @@ def main():
                     assert preferences.get_by_text("Motion", exact=True).is_visible()
                     assert preferences.get_by_text("Move hints", exact=True).is_visible()
                     assert preferences.get_by_text("Auto Pass", exact=True).is_visible()
+                    assert preferences.get_by_text("Find optimal first roll on New Game", exact=True).is_visible()
                     auto_pass = preferences.locator("#pref-auto-pass")
                     assert auto_pass.is_checked()
                     auto_pass.uncheck()
                     assert page.evaluate("localStorage.getItem('qwixx-auto-pass')") == "off"
                     auto_pass.check()
                     assert page.evaluate("localStorage.getItem('qwixx-auto-pass')") == "on"
+                    optimal_pref = preferences.locator("#pref-optimal-new-game")
+                    assert not optimal_pref.is_checked()
                     preferences.get_by_role("button", name="Close gameplay preferences").click()
                     assert preferences.is_hidden()
 
                     # New Game offers a normal roll or a server-selected optimal opening roll.
                     old_session = page.evaluate("state.session_id")
+                    page.evaluate(
+                        """() => {
+                            const originalApi = api;
+                            api = async (...args) => {
+                                if (args[0] === '/reset' && args[1]?.optimal_first_roll) {
+                                    await new Promise(resolve => setTimeout(resolve, 350));
+                                }
+                                return originalApi(...args);
+                            };
+                        }"""
+                    )
                     page.get_by_role("button", name="New game").click()
                     new_game = page.locator("#new-game-modal")
                     new_game.wait_for(state="visible", timeout=5000)
                     assert new_game.get_by_role("button", name="Random first roll").is_visible()
                     assert new_game.get_by_role("button", name="Find optimal first roll").is_visible()
                     new_game.get_by_role("button", name="Find optimal first roll").click()
+                    finding_roll = page.locator("#finding-roll-modal")
+                    finding_roll.wait_for(state="visible", timeout=5000)
+                    assert finding_roll.get_by_text("Finding optimal first roll…", exact=True).is_visible()
+                    assert "leftmost three numbers" in finding_roll.inner_text()
                     page.wait_for_function(
                         "(old) => state && state.session_id && state.session_id !== old",
                         arg=old_session,
                         timeout=10000,
                     )
                     assert new_game.is_hidden()
+                    assert finding_roll.is_hidden()
                     assert page.evaluate(
                         """() => state.legal.some(a => {
                             const order = a[0] < 2
@@ -121,6 +140,26 @@ def main():
                             return order.indexOf(a[1]) < 3;
                         })"""
                     )
+
+                    # Gameplay preference can make New Game always search for the optimal opening.
+                    gameplay.click()
+                    preferences.wait_for(state="visible", timeout=5000)
+                    optimal_pref = preferences.locator("#pref-optimal-new-game")
+                    optimal_pref.check()
+                    assert page.evaluate("localStorage.getItem('qwixx-optimal-new-game')") == "on"
+                    preferences.get_by_role("button", name="Close gameplay preferences").click()
+                    assert preferences.is_hidden()
+                    preferred_old_session = page.evaluate("state.session_id")
+                    page.get_by_role("button", name="New game").click()
+                    assert new_game.is_hidden()
+                    finding_roll.wait_for(state="visible", timeout=5000)
+                    assert finding_roll.get_by_text("Finding optimal first roll…", exact=True).is_visible()
+                    page.wait_for_function(
+                        "(old) => state && state.session_id && state.session_id !== old",
+                        arg=preferred_old_session,
+                        timeout=10000,
+                    )
+                    assert finding_roll.is_hidden()
 
                     # The human mark paints before the AI thinking indicator appears.
                     page.evaluate(
@@ -187,6 +226,8 @@ def main():
                     )
                     decision.wait_for(state="visible", timeout=5000)
                     assert decision.get_by_text("Lock the Yellow row?", exact=True).is_visible()
+                    assert "who can close this row?" in decision.inner_text().lower()
+                    assert "will close if you continue" in decision.inner_text()
                     assert "second locked row" in decision.inner_text()
                     assert "Projected final scores" in decision.inner_text()
                     decision.get_by_role("button", name="Cancel").click()
