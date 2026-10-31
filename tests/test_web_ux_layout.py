@@ -459,6 +459,7 @@ def test_locked_row_tooltips_identify_locking_players():
 
 def test_leaderboard_cards_use_single_metric_and_podium_styling():
     html = html_source()
+    leaderboard = html.split("async function showLeaderboard(){", 1)[1].split("function escapeHtml(value)", 1)[0]
     for expected in (
         "leaderboard-card-header", "leaderboard-list", "leaderboard-row",
         "leaderboard-rank", "leaderboard-value", "metric-most_wins",
@@ -467,12 +468,13 @@ def test_leaderboard_cards_use_single_metric_and_podium_styling():
         "🥇", "🥈", "🥉", "🏆", "🎯", "⭐", "📈", "🔥", "🎲",
         "m.meta(p)", "m.format(p)",
     ):
-        assert expected in html, expected
-    assert "<th>Games</th><th>Wins</th>" not in html
-    assert "<th>'+label+'</th><th>Games</th><th>Wins</th>" not in html
-    assert "Most wins</th>" not in html
-    assert "p.wins+' wins',meta:p=>p.games+' games · '+p.win_rate+'% win rate'" in html
-    assert "p.games+' games',meta:p=>p.wins+' wins · '+p.win_rate+'% win rate'" in html
+        assert expected in leaderboard or expected in html, expected
+    assert "<table" not in leaderboard
+    assert "<th>Games</th><th>Wins</th>" not in leaderboard
+    assert "<th>'+label+'</th><th>Games</th><th>Wins</th>" not in leaderboard
+    assert "Most wins</th>" not in leaderboard
+    assert "p.wins+' wins',meta:p=>p.games+' games · '+p.win_rate+'% win rate'" in leaderboard
+    assert "p.games+' games',meta:p=>p.wins+' wins · '+p.win_rate+'% win rate'" in leaderboard
 
 
 def test_leaderboard_defaults_to_champion_and_separates_difficulties():
