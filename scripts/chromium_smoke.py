@@ -47,6 +47,33 @@ def main():
                     dice_tile = page.locator(".dice-status")
                     assert dice_tile.locator(".dice-move-controls").is_visible()
                     assert "Enter: Mark" in dice_tile.inner_text()
+                    initial_tile_height = dice_tile.bounding_box()["height"]
+                    initial_scorecard_y = page.locator(".human-column .scorecard").bounding_box()["y"]
+                    assert initial_tile_height == 152
+                    page.evaluate(
+                        """() => {
+                            state.roller = 3;
+                            state.phase = state.boards.length;
+                            moving = true;
+                            thinkingActor = 3;
+                            recentChanges = [
+                                {type:'mark', label:'AI-Count von Qwixx marked Green 10 with a long status message'},
+                                {type:'strike', label:'AI-Dicey McDiceface received a strike'},
+                                {type:'lock', label:'Yellow row locked by another player'}
+                            ];
+                            render();
+                        }"""
+                    )
+                    assert dice_tile.bounding_box()["height"] == initial_tile_height
+                    assert page.locator(".human-column .scorecard").bounding_box()["y"] == initial_scorecard_y
+                    page.evaluate("moving=false;thinkingActor=null;recentChanges=[];render()")
+                    assert dice_tile.bounding_box()["height"] == initial_tile_height
+                    assert page.locator(".human-column .scorecard").bounding_box()["y"] == initial_scorecard_y
+                    toolbar_order = page.evaluate(
+                        "Array.from(document.querySelector('.game-toolbar').children).map("
+                        "el => (el.textContent || '').trim())"
+                    )
+                    assert toolbar_order.index("New game") < toolbar_order.index("⚙ Gameplay") < toolbar_order.index("AppearanceDarkLightAuto (system)")
                     assert page.locator(".human-column .scorecard").is_visible()
                     assert page.locator(".human-column .move-analysis-panel").is_visible()
                     assert page.evaluate(
