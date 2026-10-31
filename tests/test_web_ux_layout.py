@@ -199,7 +199,13 @@ const context={
  console,Math,Array,JSON,Promise,setTimeout,clearTimeout,setInterval,clearInterval,
  localStorage:{getItem:k=>stored[k]??null,setItem:(k,v)=>{stored[k]=v}},
  sessionStorage:{getItem:k=>stored['session:'+k]??null,setItem:(k,v)=>{stored['session:'+k]=v},removeItem:k=>{delete stored['session:'+k]}},
- document:{documentElement:{dataset:{}},getElementById:el,querySelector:()=>null},
+ document:{
+   documentElement:{dataset:{}},
+   body:{appendChild:()=>{}},
+   getElementById:el,
+   querySelector:()=>null,
+   createElement:()=>({id:'',className:'',innerHTML:'',setAttribute:()=>{}})
+ },
  window:{matchMedia:()=>({matches:true,addEventListener:()=>{}})},
  fetch:()=>Promise.reject(Error('offline')),
 };
