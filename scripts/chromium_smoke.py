@@ -233,6 +233,48 @@ def main():
                     decision.get_by_role("button", name="Cancel").click()
                     assert decision.is_hidden()
 
+                    # Leaderboard cards use one dominant metric, podium styling, and no repeated table columns.
+                    page.evaluate(
+                        """() => {
+                            const originalFetch = fetch;
+                            const players = [
+                                {name:'dWiGhT',games:136,wins:26,ties:3,highest_score:181,average_score:102.4,total_points:13926,win_rate:19.1},
+                                {name:'Roll Master',games:98,wins:21,ties:2,highest_score:175,average_score:99.8,total_points:9780,win_rate:21.4},
+                                {name:'Dice Queen',games:84,wins:19,ties:1,highest_score:169,average_score:104.1,total_points:8744,win_rate:22.6}
+                            ];
+                            fetch = async (url, options) => {
+                                if (String(url).startsWith('/api/leaderboard')) {
+                                    return new Response(JSON.stringify({
+                                        difficulty:'champion',
+                                        minimum_games_for_rates:5,
+                                        registered_players:3,
+                                        rankings:{
+                                            most_wins:players,
+                                            highest_score:players,
+                                            total_points:players,
+                                            average_score:players,
+                                            win_rate:players,
+                                            most_games:players
+                                        }
+                                    }), {status:200,headers:{'Content-Type':'application/json'}});
+                                }
+                                return originalFetch(url, options);
+                            };
+                            showTab('leaderboard');
+                        }"""
+                    )
+                    leaderboard = page.locator("#leaderboard")
+                    leaderboard.get_by_text("Most wins", exact=True).wait_for(state="visible", timeout=5000)
+                    assert leaderboard.locator("table").count() == 0
+                    assert leaderboard.locator(".leaderboard-card").count() == 6
+                    wins_card = leaderboard.locator(".leaderboard-card.metric-most_wins")
+                    assert "🥇" in wins_card.locator(".leaderboard-row").first.inner_text()
+                    assert "26 wins" in wins_card.locator(".leaderboard-row").first.inner_text()
+                    assert "136 games · 19.1% win rate" in wins_card.locator(".leaderboard-row").first.inner_text()
+                    assert wins_card.locator(".leaderboard-row.first").count() == 1
+                    assert wins_card.locator(".leaderboard-row.second").count() == 1
+                    assert wins_card.locator(".leaderboard-row.third").count() == 1
+
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
