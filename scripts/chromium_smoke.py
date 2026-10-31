@@ -98,6 +98,48 @@ def main():
                     assert page.evaluate("localStorage.getItem('qwixx-auto-pass')") == "on"
                     preferences.get_by_role("button", name="Close gameplay preferences").click()
                     assert preferences.is_hidden()
+
+                    # Passing despite a legal mark and taking a strike uses the styled confirmation dialog.
+                    page.evaluate(
+                        """() => {
+                            state.actor = 0;
+                            state.roller = 0;
+                            state.phase = state.boards.length;
+                            state.active_marks = 0;
+                            state.legal = [[0, 6, false]];
+                            state.scores = [20, 25, 18, 12];
+                            confirmPenaltyPass();
+                        }"""
+                    )
+                    decision = page.locator("#decision-modal")
+                    decision.wait_for(state="visible", timeout=5000)
+                    assert decision.get_by_text("Take a missed-throw penalty?", exact=True).is_visible()
+                    assert "−5 point penalty" in decision.inner_text()
+                    assert decision.get_by_role("button", name="Pass anyway (−5)").is_visible()
+                    decision.get_by_role("button", name="Cancel").click()
+                    assert decision.is_hidden()
+
+                    # A game-ending second lock shows projected standings in the same styled dialog.
+                    page.evaluate(
+                        """() => {
+                            state.actor = 0;
+                            state.roller = 0;
+                            state.phase = state.boards.length;
+                            state.locks = ['red'];
+                            state.white_locks = [];
+                            state.legal = [[1, 12, true]];
+                            state.boards[0].rows[1] = [2,3,4,5,6];
+                            state.boards[1].rows[2] = [12,11,10,9,8,7,6,5,4];
+                            confirmLockAction([1,12,true]);
+                        }"""
+                    )
+                    decision.wait_for(state="visible", timeout=5000)
+                    assert decision.get_by_text("Lock the Yellow row?", exact=True).is_visible()
+                    assert "second locked row" in decision.inner_text()
+                    assert "Projected final scores" in decision.inner_text()
+                    decision.get_by_role("button", name="Cancel").click()
+                    assert decision.is_hidden()
+
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
