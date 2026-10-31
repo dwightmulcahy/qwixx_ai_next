@@ -86,6 +86,8 @@ def test_toolbar_order_compact_dice_and_clean_lock_glyphs():
     for expected in (
         ".gameplay-button{margin-left:0}",
         ".dice-status{position:relative;padding:7px 10px",
+        "@media(min-width:761px){.dice-status{height:152px;overflow:hidden}",
+        ".compact-dice-layout{display:grid;grid-template-columns:270px minmax(0,1fr)",
         ".dice-status .die{width:46px;height:46px",
         ".dice-move-controls{border-top:1px solid var(--border);margin-top:6px;padding-top:6px",
         ".lock-glyph{position:relative",
@@ -95,6 +97,19 @@ def test_toolbar_order_compact_dice_and_clean_lock_glyphs():
     ):
         assert expected in html, expected
     assert "?'🔒':row.length>=5?'🔓':'♙'" not in html
+
+
+def test_dice_tile_reserves_stable_desktop_height():
+    html = html_source()
+    for expected in (
+        ".dice-status{height:152px;overflow:hidden}",
+        ".compact-dice-layout{height:58px}",
+        ".dice-move-controls{height:51px",
+        ".game-events{height:17px;overflow:hidden;flex-wrap:nowrap}",
+        ".compact-turn .roller-header{margin:0 0 2px;gap:5px;flex-wrap:nowrap",
+        ".dice-move-controls .move-status{grid-area:status;display:flex;flex-wrap:nowrap",
+    ):
+        assert expected in html, expected
 
 
 def test_legal_moves_are_visually_prominent():
