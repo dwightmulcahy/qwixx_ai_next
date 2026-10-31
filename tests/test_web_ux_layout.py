@@ -73,8 +73,12 @@ def test_gameplay_preferences_are_in_a_dialog():
         "function openGameplayPreferences()", "function closeGameplayPreferences()",
         "function syncGameplayPreferences()", 'id="pref-quick-mark"',
         'id="pref-ai-pace"', 'id="pref-motion"', 'id="pref-move-hints"', 'id="pref-auto-pass"',
+        'id="pref-optimal-new-game"',
         "Quick Mark", "AI pace", "Motion", "Move hints", "Auto Pass",
+        "Find optimal first roll on New Game",
         "Automatically pass when no legal mark is available.",
+        "OPTIMAL_NEW_GAME_KEY='qwixx-optimal-new-game'",
+        "preference(OPTIMAL_NEW_GAME_KEY,'off')==='on'",
     ):
         assert expected in html, expected
     assert ".gameplay-overlay[hidden]{display:none!important}" in html
@@ -124,6 +128,9 @@ def test_new_game_dialog_offers_optimal_first_roll():
         'id="finding-roll-modal"', "Finding optimal first roll…",
         "function showFindingOptimalRoll()", "function hideFindingOptimalRoll()",
         "showFindingOptimalRoll();await nextBrowserPaint()",
+        "function optimalNewGameEnabled()",
+        "if(optimalNewGameEnabled()){void startNewGame(true);return}",
+        '<button onclick="openNewGameDialog()">Play again</button>',
     ):
         assert expected in html, expected
 
