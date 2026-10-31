@@ -25,10 +25,25 @@ def test_explicit_training_data_path_is_honored(tmp_path):
     assert target.is_dir()
 
 
+def test_optimal_opening_roll_supports_two_edge_marks():
+    from qwixx_ai.core import Game
+    from qwixx_ai.web import opening_supports_two_edge_marks, optimal_opening_game
+
+    good=Game(seed=1);good.dice=(1,1,2,2,2,2)
+    bad=Game(seed=1);bad.dice=(3,4,3,3,3,3)
+    assert opening_supports_two_edge_marks(good)
+    assert not opening_supports_two_edge_marks(bad)
+    found=optimal_opening_game()
+    assert opening_supports_two_edge_marks(found)
+
+
 def test_independent_sessions(tmp_path,monkeypatch):
+    from qwixx_ai.web import opening_supports_two_edge_marks
     c=Coordinator()
     first=c.new_session();second=c.new_session()
     assert first['session_id']!=second['session_id']
+    optimal=c.new_session(optimal_first_roll=True)
+    assert opening_supports_two_edge_marks(c.sessions[optimal['session_id']][0].game)
     first_after=c.session_action(first['session_id'],None)
     assert first_after['session_id']==first['session_id']
     assert c.sessions[second['session_id']][0].view()=={k:v for k,v in second.items() if k!='session_id'}
@@ -241,12 +256,15 @@ def test_training_dashboard_link_and_status():
     assert "Training ${x.paused?'PAUSED':'ACTIVE'}" in DASHBOARD_HTML
 
 
-def test_step_two_strike_warning_is_inline_without_popup():
+def test_step_two_strike_warning_confirms_only_when_legal_marks_exist():
     from qwixx_ai.web import HTML
 
     assert "Passing now gives you a strike (−5 points)." in HTML
-    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
-    assert "window.confirm('No legal marks available." not in HTML
+    assert "function shouldConfirmPenaltyPass()" in HTML
+    assert "state.legal.length>0" in HTML
+    assert "Take a missed-throw penalty?" in HTML
+    assert "Pass anyway (−5)" in HTML
+    assert "if(shouldConfirmPenaltyPass()){confirmPenaltyPass();return}act(null)" in HTML
 
 
 def test_player_stats_route_accepts_plain_url_and_filters():
@@ -269,6 +287,18 @@ def test_game_tabs_are_present_and_preserve_game_nodes():
     assert "window.showTab=activate" in HTML
     assert "activate('play')" in HTML
     assert "panels.play.appendChild" in HTML
+
+
+def test_reset_endpoint_supports_optimal_first_roll():
+    import inspect
+    from qwixx_ai.distributed import Coordinator, Handler
+
+    handler=inspect.getsource(Handler.do_POST)
+    coordinator=inspect.getsource(Coordinator.new_session)
+    assert "optimal=data.get('optimal_first_roll',False)" in handler
+    assert "if type(optimal) is not bool:raise ValueError('optimal_first_roll must be boolean')" in handler
+    assert "optimal_first_roll=False" in coordinator
+    assert "session.reset_game(optimal_first_roll)" in coordinator
 
 
 def test_guest_mode_overrides_registered_cookie_without_logging_out():
@@ -302,12 +332,17 @@ def test_game_script_turn_controls_have_valid_concat():
     assert 'class="move-buttons"' in HTML
     assert 'onclick="confirmPhase()"' in HTML
     assert 'function maybeAutoPass()' in HTML
+    assert 'id="decision-modal"' in HTML
+    assert "function confirmLockAction(action)" in HTML
+    assert "function confirmPenaltyPass()" in HTML
     assert "AUTO_PASS_KEY='qwixx-auto-pass'" in HTML
     assert 'id="pref-auto-pass"' in HTML
     assert '⚡ AUTO PASS · No legal marks available' in HTML
     assert 'No legal marks · Pass required' in HTML
     assert 'function render()' in HTML
-    assert 'async function reset()' in HTML
+    assert 'async function reset(optimalFirstRoll=false)' in HTML
+    assert 'function openNewGameDialog()' in HTML
+    assert 'Find optimal first roll' in HTML
 
 
 def test_colorful_favicon_linked_and_available():
@@ -337,7 +372,8 @@ def test_unavailable_white_total_skips_without_confirmation():
 
     assert "Pass on the white dice total" not in HTML
     assert "No legal marks available. Skipping gives you a strike" not in HTML
-    assert "function skipPhase(){if(!state||state.done||moving)return;act(null)}" in HTML
+    assert "function skipPhase()" in HTML
+    assert "if(shouldConfirmPenaltyPass()){confirmPenaltyPass();return}act(null)" in HTML
     assert "A strike only occurs if you pass both opportunities on your roll." in HTML
 
 
@@ -349,6 +385,21 @@ def test_auto_pass_only_targets_human_phases_with_zero_legal_moves():
     assert "state.actor!==0||state.legal.length!==0" in HTML
     assert "autoPassTimer=setTimeout" in HTML
     assert "act(null)" in HTML
+
+
+def test_lock_confirmation_warns_when_second_lock_would_end_game():
+    from qwixx_ai.web import HTML
+
+    for expected in (
+        "function projectedLockScores(action)",
+        "function remainingWhiteCanChange(action)",
+        "secondLock=newDistinct&&state.locks.length===1",
+        "This is the second locked row and will end the game.",
+        "Projected final scores",
+        "scores can still change",
+    ):
+        assert expected in HTML, expected
+    assert "window.confirm('Close this row?" not in HTML
 
 
 def test_penalty_popup_identifies_players_and_point_loss():

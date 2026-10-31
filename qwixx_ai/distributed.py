@@ -225,13 +225,13 @@ class Coordinator:
                 candidate=ROOT/'candidate.pt';save(self.model,candidate,updates=self.updates,games=self.games,win_share=result['win_share']);candidate.replace(ROOT/'best.pt')
                 self.best=result['win_share'];self.best_model=copy.deepcopy(self.model).eval();self.league.append(copy.deepcopy(self.best_model));self.promoted_at=time.time()
             with self.log.open('a') as f:f.write(json.dumps({'time':time.time(),**self.stats()})+'\n')
-    def new_session(self,difficulty='champion',player_id=None):
+    def new_session(self,difficulty='champion',player_id=None,optimal_first_roll=False):
         with self.lock:
             for key,(_,updated,_) in list(self.sessions.items()):
                 if time.time()-updated>86400:self.sessions.pop(key,None)
             if len(self.sessions)>=200:raise ValueError('Too many game sessions')
             if player_id is not None:self.player_stats.profile(player_id)
-            sid=uuid.uuid4().hex;session=Session(model=self.best_model,difficulty=difficulty);session.advance();self.sessions[sid]=(session,time.time(),player_id)
+            sid=uuid.uuid4().hex;session=Session(model=self.best_model,difficulty=difficulty);session.reset_game(optimal_first_roll);self.sessions[sid]=(session,time.time(),player_id)
             return {'session_id':sid,**session.view()}
     def session_action(self,sid,action,expected_turn=None,expected_phase=None):
         with self.lock:
@@ -433,9 +433,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
                 if self.path=='/reset':
-                    guest=data.get('guest',False)
+                    guest=data.get('guest',False);optimal=data.get('optimal_first_roll',False)
                     if type(guest) is not bool:raise ValueError('guest must be boolean')
-                    result=self.coord.new_session(data.get('difficulty','champion'),None if guest else self.player_id())
+                    if type(optimal) is not bool:raise ValueError('optimal_first_roll must be boolean')
+                    result=self.coord.new_session(data.get('difficulty','champion'),None if guest else self.player_id(),optimal)
                 else:
                     a=data.get('action');a=None if a is None else tuple(a);sid=data.get('session_id','');entry=self.coord.sessions.get(sid)
                     if entry and entry[2] is not None and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
