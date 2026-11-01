@@ -235,7 +235,8 @@ def test_live_rank_and_lock_ready_indicators():
     assert "state.scores.filter(s=>s>score).length" in html
     assert "function lockReadyRows(board){if(state.done)return[]" in html
     assert "readyToLock=!state.done&&!locked&&row.length>=5" in html
-    assert "!state.done&&!locked&&row.length>=5?'lock-ready'" in html
+    assert "locked?'locked':!state.done&&row.length>=5?'lock-ready'" in html
+    assert "!state.done&&!locked&&row.length>=5?' ready'" in html
 
 
 def test_first_visit_guest_or_registration_prompt():
