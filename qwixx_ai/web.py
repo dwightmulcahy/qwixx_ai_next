@@ -240,8 +240,8 @@ function openNewGameDialog(){if(optimalNewGameEnabled()){void startNewGame(true)
 function closeNewGameDialog(){const modal=document.getElementById('new-game-modal');if(modal)modal.hidden=true}
 function showFindingOptimalRoll(){const modal=document.getElementById('finding-roll-modal');if(modal)modal.hidden=false}
 function hideFindingOptimalRoll(){const modal=document.getElementById('finding-roll-modal');if(modal)modal.hidden=true}
-async function startNewGame(optimalFirstRoll){closeNewGameDialog();if(optimalFirstRoll){showFindingOptimalRoll();await nextBrowserPaint()}try{await reset(!!optimalFirstRoll)}finally{if(optimalFirstRoll)hideFindingOptimalRoll()}}
-async function reset(optimalFirstRoll=false){if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}autoPassKey='';optimisticAction=null;thinkingVisible=false;const next=await api('/reset',{difficulty:document.getElementById('difficulty').value,guest:playMode()==='guest',optimal_first_roll:!!optimalFirstRoll});if(next){document.getElementById('game-error').hidden=true;state=next;pending=null;recentChanges=[];gameOverShown=false;document.getElementById('game-over-modal')?.remove();render()}}
+async function startNewGame(optimalFirstRoll){closeNewGameDialog();clearPenaltyModal();if(optimalFirstRoll){showFindingOptimalRoll();await nextBrowserPaint()}try{await reset(!!optimalFirstRoll)}finally{if(optimalFirstRoll)hideFindingOptimalRoll()}}
+async function reset(optimalFirstRoll=false){clearPenaltyModal();if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}autoPassKey='';optimisticAction=null;thinkingVisible=false;const next=await api('/reset',{difficulty:document.getElementById('difficulty').value,guest:playMode()==='guest',optimal_first_roll:!!optimalFirstRoll});if(next){document.getElementById('game-error').hidden=true;state=next;pending=null;recentChanges=[];gameOverShown=false;document.getElementById('game-over-modal')?.remove();clearPenaltyModal();render()}}
 let verifiedPlayer=null,verificationEmail='',authAvailable=false;
 function updateAccountStatus(){const el=document.getElementById('account-status');if(!el)return;el.textContent=verifiedPlayer?'Signed in: '+verifiedPlayer.name+(playMode()==='guest'?' · playing this session as Guest':''):'Guest — games will not be saved'}
 async function loadPlayers(){try{const response=await fetch('/api/auth/me');if(!response.ok)throw Error('Account status unavailable');authAvailable=true;const data=await response.json();verifiedPlayer=data.player;updateAccountStatus();document.getElementById('auth-login').hidden=!!verifiedPlayer;document.getElementById('auth-logout').hidden=!verifiedPlayer;return true}catch(e){console.warn('Account unavailable',e);return false}}
@@ -296,14 +296,17 @@ async function showLeaderboard(){
  }catch(e){panel.innerHTML='<h2>Top 10</h2><p role="alert">'+escapeHtml(e.message)+'</p><button type="button" onclick="showLeaderboard()">Retry</button>'}
 }
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function clearPenaltyModal(){document.getElementById('penalty-modal')?.remove()}
 let moving=false;function showNewPenalties(previous,next){
- if(!previous||!next||!previous.boards||!next.boards)return;
+ if(!previous||!next||!previous.boards||!next.boards||next.done)return;
+ const penaltySession=next.session_id||previous.session_id;
+ if(penaltySession&&state?.session_id&&penaltySession!==state.session_id)return;
  const changes=next.boards.flatMap((board,i)=>{
   const before=previous.boards[i]?.penalties||0;
   return board.penalties>before?[{name:playerNames[i]||'Player '+(i+1),count:board.penalties-before}]:[];
  });
  if(!changes.length)return;
- document.getElementById('penalty-modal')?.remove();
+ clearPenaltyModal();
  const overlay=document.createElement('div');
  overlay.id='penalty-modal';overlay.className='game-over-overlay';
  overlay.setAttribute('role','alertdialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Penalty awarded');
@@ -319,7 +322,7 @@ let moving=false;function showNewPenalties(previous,next){
  dialog.appendChild(button);overlay.appendChild(dialog);document.body.appendChild(overlay);button.focus();
 }
 function nextBrowserPaint(){return new Promise(resolve=>{if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(resolve));else setTimeout(resolve,0)})}
-async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;optimisticAction=a===null?null:a;thinkingVisible=a===null;if(optimisticAction){render();await nextBrowserPaint()}thinkingVisible=true;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid&&thinkingActor!==progress.actor){thinkingActor=progress.actor;render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next){optimisticAction=null;state=next;pending=null;recordMoveChanges(previous,next);render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;thinkingVisible=false;optimisticAction=null;if(state)render()}}
+async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;optimisticAction=a===null?null:a;thinkingVisible=a===null;if(optimisticAction){render();await nextBrowserPaint()}thinkingVisible=true;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid&&thinkingActor!==progress.actor){thinkingActor=progress.actor;render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next&&state?.session_id===sid){optimisticAction=null;state=next;pending=null;recordMoveChanges(previous,next);render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;thinkingVisible=false;optimisticAction=null;if(state)render()}}
 
 let decisionAction=null;
 function openDecision(title,bodyHtml,confirmLabel,tone,action){const modal=document.getElementById('decision-modal'),dialog=document.getElementById('decision-dialog'),titleEl=document.getElementById('decision-title'),body=document.getElementById('decision-body'),confirm=document.getElementById('decision-confirm');if(!modal||!dialog||!titleEl||!body||!confirm)return;decisionAction=action;titleEl.textContent=title;body.innerHTML=bodyHtml;confirm.textContent=confirmLabel;dialog.className='decision-dialog '+(tone==='danger'?'danger':'warning');confirm.className=tone==='danger'?'confirm-danger':'confirm-warning';modal.hidden=false;confirm.focus?.()}
@@ -369,7 +372,7 @@ function miniCard(board,i){
  return b+'<div class="mini-footer"><span>Strikes: '+board.penalties+' / 4</span><span>Position: '+playerRank(i).label+'</span></div></section>';
 }
 function closeGameOver(){document.getElementById('game-over-modal')?.remove()}
-function showGameOver(){if(gameOverShown||!state.done)return;gameOverShown=true;const rankings=state.scores.map((score,i)=>({name:playerNames[i],score})).sort((a,b)=>b.score-a.score);const overlay=document.createElement('div');overlay.id='game-over-modal';overlay.className='game-over-overlay';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Game over');overlay.innerHTML='<div class="game-over-dialog"><h2>🏁 Game over!</h2><p><strong>'+rankings[0].name+' wins!</strong></p><p>'+rankings.map(p=>p.name+': '+p.score).join('<br>')+'</p><button onclick="openNewGameDialog()">Play again</button><button onclick="closeGameOver()">View final scorecards</button></div>';document.body.appendChild(overlay)}
+function showGameOver(){if(gameOverShown||!state.done)return;clearPenaltyModal();gameOverShown=true;const rankings=state.scores.map((score,i)=>({name:playerNames[i],score})).sort((a,b)=>b.score-a.score);const overlay=document.createElement('div');overlay.id='game-over-modal';overlay.className='game-over-overlay';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Game over');overlay.innerHTML='<div class="game-over-dialog"><h2>🏁 Game over!</h2><p><strong>'+rankings[0].name+' wins!</strong></p><p>'+rankings.map(p=>p.name+': '+p.score).join('<br>')+'</p><button onclick="openNewGameDialog()">Play again</button><button onclick="closeGameOver()">View final scorecards</button></div>';document.body.appendChild(overlay)}
 function render(){if(!state)return;
  document.documentElement.dataset.reducedMotion=reducedMotion()?'on':'off';
  const roller=playerNames[state.roller]||'AI';const whitePhase=state.phase<state.boards.length;const youRoll=state.roller===0;const noLegal=!state.done&&state.actor===0&&state.legal.length===0;const autoPassEnabled=preference(AUTO_PASS_KEY,'on')==='on';
