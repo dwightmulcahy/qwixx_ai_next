@@ -283,7 +283,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const code=fs.readFileSync(process.argv[2],'utf8');
 const elements={};
-function el(id){return elements[id]??=( {innerHTML:'',textContent:'',hidden:true,className:'',focus:()=>{}} )}
+function el(id){return elements[id]??=( {innerHTML:'',textContent:'',hidden:true,className:'',focus:()=>{},remove:()=>{delete elements[id]}} )}
 const stored={};
 const context={
  console,Math,Array,JSON,Promise,setTimeout,clearTimeout,setInterval,clearInterval,
