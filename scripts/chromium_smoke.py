@@ -190,6 +190,31 @@ def main():
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
 
+                    # A penalty notification must never survive the transition to Game Over.
+                    page.evaluate(
+                        """() => {
+                            const previous = structuredClone(state);
+                            const next = structuredClone(state);
+                            next.boards[1].penalties = (previous.boards[1].penalties || 0) + 1;
+                            next.done = false;
+                            showNewPenalties(previous, next);
+                        }"""
+                    )
+                    penalty = page.locator("#penalty-modal")
+                    penalty.wait_for(state="visible", timeout=5000)
+                    assert "Penalty!" in penalty.inner_text()
+                    page.evaluate("state.done=true;gameOverShown=false;showGameOver()")
+                    assert page.locator("#penalty-modal").count() == 0
+                    game_over = page.locator("#game-over-modal")
+                    game_over.wait_for(state="visible", timeout=5000)
+                    game_over.get_by_role("button", name="View final scorecards").click()
+                    assert game_over.count() == 0
+
+                    # Reload restores authoritative game state after the client-only transition test.
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
+                    assert page.locator("#welcome-modal").is_hidden()
+
                     # Passing despite a legal mark and taking a strike uses the styled confirmation dialog.
                     page.evaluate(
                         """() => {
