@@ -405,10 +405,18 @@ def test_lock_confirmation_warns_when_second_lock_would_end_game():
 def test_penalty_popup_identifies_players_and_point_loss():
     from qwixx_ai.web import HTML
 
+    assert "function clearPenaltyModal()" in HTML
     assert "function showNewPenalties(previous,next)" in HTML
+    assert "previous.boards||!next.boards||next.done" in HTML
+    assert "penaltySession=next.session_id||previous.session_id" in HTML
+    assert "penaltySession!==state.session_id" in HTML
     assert "board.penalties>before" in HTML
     assert "playerNames[i]||'Player '" in HTML
     assert "change.name+' received '+change.count+' X'" in HTML
     assert "' points).'" in HTML
     assert "showNewPenalties(previous,next)" in HTML
     assert "overlay.setAttribute('role','alertdialog')" in HTML
+    assert "showGameOver(){if(gameOverShown||!state.done)return;clearPenaltyModal()" in HTML
+    assert "async function startNewGame(optimalFirstRoll){closeNewGameDialog();clearPenaltyModal()" in HTML
+    assert "async function reset(optimalFirstRoll=false){clearPenaltyModal()" in HTML
+    assert "if(next&&state?.session_id===sid)" in HTML
