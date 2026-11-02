@@ -73,6 +73,22 @@ def test_pass_is_always_the_final_move_button():
     assert controls.rfind('onclick="skipPhase()"') > controls.rfind('onclick="backToStep1()"')
 
 
+def test_ai_strikes_use_visual_boxes_and_nonblocking_events():
+    html = html_source()
+    for expected in (
+        "mini-penalties",
+        "mini-penalty-box",
+        "recent-strike",
+        "humanChanges=changes.filter(change=>change.player===0)",
+        "if(!humanChanges.length)return",
+        "❌ '+playerNames[i]+' takes ",
+        " · −'+(strikes*5)",
+        "{player:i,name:dialogPlayerName(i)",
+    ):
+        assert expected in html, expected
+    assert "Strikes: '+board.penalties+' / 4" not in html
+
+
 def test_gameplay_preferences_are_in_a_dialog():
     html = html_source()
     for expected in (
@@ -386,7 +402,8 @@ assert.match(board,/mini-row yellow lock-ready/);
 assert.match(board,/mini-lock lock-ready/);
 assert.match(board,/Red 3 skipped/);
 assert.match(board,/Red locked/);
-assert.match(board,/Strikes: 2 \/ 4/);
+assert.match(board,/class="mini-strikes"/);
+assert.equal((board.match(/mini-penalty-box used/g)||[]).length>=2,true);
 assert.match(board,/mini-card rolling leading/);
 assert.match(board,/onclick="confirmPhase\(\)"/);
 assert.match(board,/onclick="clearSelection\(\)"/);

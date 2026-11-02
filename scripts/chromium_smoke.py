@@ -190,13 +190,35 @@ def main():
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
 
-                    # A penalty notification must never survive the transition to Game Over.
+                    # AI strikes are nonblocking: event strip + visual X box, no modal.
                     page.evaluate(
                         """() => {
                             const previous = structuredClone(state);
                             const next = structuredClone(state);
                             next.boards[1].penalties = (previous.boards[1].penalties || 0) + 1;
                             next.done = false;
+                            state = next;
+                            recordMoveChanges(previous, next);
+                            render();
+                            showNewPenalties(previous, next);
+                        }"""
+                    )
+                    assert page.locator("#penalty-modal").count() == 0
+                    ai_card = page.locator(".mini-card").first
+                    assert ai_card.locator(".mini-penalty-box.used").count() >= 1
+                    assert ai_card.locator(".mini-penalty-box.recent-strike").count() == 1
+                    assert "takes a strike · −5" in page.locator(".game-events").inner_text()
+
+                    # Human strikes still use the blocking penalty dialog.
+                    page.evaluate(
+                        """() => {
+                            const previous = structuredClone(state);
+                            const next = structuredClone(state);
+                            next.boards[0].penalties = (previous.boards[0].penalties || 0) + 1;
+                            next.done = false;
+                            state = next;
+                            recordMoveChanges(previous, next);
+                            render();
                             showNewPenalties(previous, next);
                         }"""
                     )

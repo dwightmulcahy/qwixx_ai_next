@@ -459,7 +459,7 @@ def test_lock_confirmation_warns_when_second_lock_would_end_game():
     assert "window.confirm('Close this row?" not in HTML
 
 
-def test_penalty_popup_identifies_players_and_point_loss():
+def test_penalty_notifications_block_only_for_the_human_player():
     from qwixx_ai.web import HTML
 
     assert "function clearPenaltyModal()" in HTML
@@ -468,9 +468,13 @@ def test_penalty_popup_identifies_players_and_point_loss():
     assert "penaltySession=next.session_id||previous.session_id" in HTML
     assert "penaltySession!==state.session_id" in HTML
     assert "board.penalties>before" in HTML
-    assert "dialogPlayerName(i),count:board.penalties-before" in HTML
+    assert "{player:i,name:dialogPlayerName(i),count:board.penalties-before}" in HTML
+    assert "humanChanges=changes.filter(change=>change.player===0)" in HTML
+    assert "if(!humanChanges.length)return" in HTML
+    assert "for(const change of humanChanges)" in HTML
     assert "change.name+' received '+change.count+' X'" in HTML
     assert "' points).'" in HTML
+    assert "takes '+(strikes===1?'a strike':strikes+' strikes')+' · −'" in HTML
     assert "showNewPenalties(previous,next)" in HTML
     assert "overlay.setAttribute('role','alertdialog')" in HTML
     assert "showGameOver(){if(gameOverShown||!state.done)return;clearPenaltyModal()" in HTML
