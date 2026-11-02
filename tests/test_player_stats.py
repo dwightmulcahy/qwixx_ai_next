@@ -114,7 +114,12 @@ def test_leaderboard_only_verified_players_and_ranking_filters(tmp_path):
     assert [p["name"] for p in result["rankings"]["average_place"]] == ["Registered", "Second"]
     assert result["rankings"]["average_place"][0]["average_place"] == 1.0
     assert result["rankings"]["average_place"][1]["average_place"] == 1.8
-    assert [p["name"] for p in store.leaderboard("champion")["rankings"]["most_wins"]] == ["Registered"]
+    assert [p["name"] for p in result["rankings"]["longest_win_streak"]] == ["Registered", "Second"]
+    assert result["rankings"]["longest_win_streak"][0]["longest_win_streak"] == 5
+    assert result["rankings"]["longest_win_streak"][1]["longest_win_streak"] == 1
+    champion = store.leaderboard("champion")
+    assert [p["name"] for p in champion["rankings"]["most_wins"]] == ["Registered"]
+    assert champion["rankings"]["longest_win_streak"][0]["longest_win_streak"] == 5
     assert "email" not in str(result)
     with pytest.raises(ValueError):
         store.leaderboard("impossible")

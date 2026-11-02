@@ -216,7 +216,7 @@ class PlayerStats:
         params = (difficulty,) if difficulty else ()
         with self.lock:
             rows = self.db.execute(
-                "SELECT p.name, COUNT(*) AS games, "
+                "SELECT p.id, p.name, COUNT(*) AS games, "
                 "SUM(CASE WHEN r.result='win' THEN 1 ELSE 0 END) AS wins, "
                 "SUM(CASE WHEN r.result='tie' THEN 1 ELSE 0 END) AS ties, "
                 "MAX(r.score) AS highest_score, ROUND(AVG(r.score),1) AS average_score, "
@@ -224,9 +224,19 @@ class PlayerStats:
                 "FROM results r JOIN players p ON p.id=r.player_id "
                 "WHERE p.email IS NOT NULL " + condition + " GROUP BY p.id, p.name", params
             ).fetchall()
-        players = [dict(name=row[0], games=row[1], wins=row[2], ties=row[3],
-                        highest_score=row[4], average_score=row[5], total_points=row[6],
-                        average_place=row[7], win_rate=round(100*row[2]/row[1], 1)) for row in rows]
+            streak_rows = self.db.execute(
+                "SELECT r.player_id,r.result FROM results r JOIN players p ON p.id=r.player_id "
+                "WHERE p.email IS NOT NULL " + condition + " ORDER BY r.player_id,r.created,r.rowid", params
+            ).fetchall()
+        streaks = {}
+        current = {}
+        for player_id, result in streak_rows:
+            current[player_id] = current.get(player_id, 0) + 1 if result == "win" else 0
+            streaks[player_id] = max(streaks.get(player_id, 0), current[player_id])
+        players = [dict(name=row[1], games=row[2], wins=row[3], ties=row[4],
+                        highest_score=row[5], average_score=row[6], total_points=row[7],
+                        average_place=row[8], longest_win_streak=streaks.get(row[0], 0),
+                        win_rate=round(100*row[3]/row[2], 1)) for row in rows]
         metrics = {
             "most_wins": ("wins", "games", "highest_score"),
             "highest_score": ("highest_score", "wins", "games"),
@@ -234,6 +244,7 @@ class PlayerStats:
             "average_score": ("average_score", "wins", "games"),
             "average_place": ("average_place", "wins", "games"),
             "win_rate": ("win_rate", "wins", "games"),
+            "longest_win_streak": ("longest_win_streak", "wins", "games"),
             "most_games": ("games", "wins", "highest_score"),
         }
         # Rate/average rankings require at least 5 completed games.
