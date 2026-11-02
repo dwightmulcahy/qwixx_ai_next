@@ -175,6 +175,11 @@ def main():
                             thinkingActor = null;
                             thinkingVisible = false;
                             optimisticAction = null;
+                            window.__smokeRafQueue = [];
+                            window.requestAnimationFrame = cb => {
+                                window.__smokeRafQueue.push(cb);
+                                return window.__smokeRafQueue.length;
+                            };
                             api = async () => new Promise(() => {});
                             render();
                             confirmPhase();
@@ -182,6 +187,12 @@ def main():
                     )
                     assert page.locator(".number-cell.optimistic-mark").is_visible()
                     assert page.locator(".ai-thinking").count() == 0
+                    page.evaluate(
+                        "() => { const queued=[...window.__smokeRafQueue]; window.__smokeRafQueue=[]; queued.forEach(cb=>cb(performance.now())); }"
+                    )
+                    page.evaluate(
+                        "() => { const queued=[...window.__smokeRafQueue]; window.__smokeRafQueue=[]; queued.forEach(cb=>cb(performance.now())); }"
+                    )
                     page.wait_for_function("document.querySelector('.ai-thinking') !== null", timeout=3000)
                     assert page.locator(".number-cell.optimistic-mark").is_visible()
 
@@ -330,6 +341,23 @@ def main():
                     # This smoke session started as Guest and has no real auth cookie; restore that
                     # mode before the final reload so startup resumes the existing guest game.
                     page.evaluate("setPlayMode('guest')")
+
+                    # Rules content is immediately visible without a second disclosure click.
+                    page.get_by_role("tab", name="Rules & FAQ").click()
+                    rules_panel = page.locator("#section-rules")
+                    assert rules_panel.get_by_role("heading", name="Rules & FAQ", exact=True).is_visible()
+                    assert rules_panel.locator("details#rules-faq").count() == 0
+                    assert rules_panel.get_by_text("White dice (everyone)", exact=True).is_visible()
+
+                    # About includes project context and clear contact paths.
+                    page.get_by_role("tab", name="About", exact=True).click()
+                    about_panel = page.locator("#section-about")
+                    assert about_panel.get_by_role("heading", name="About Qwixx AI", exact=True).is_visible()
+                    assert about_panel.get_by_role("heading", name="Get in Touch", exact=True).is_visible()
+                    assert about_panel.get_by_role("link", name="GitHub Repository").is_visible()
+                    assert about_panel.get_by_role("link", name="Report an Issue").is_visible()
+                    assert about_panel.get_by_role("link", name="LinkedIn Profile").is_visible()
+                    page.get_by_role("tab", name="Play", exact=True).click()
 
                     # Leaderboard cards use one dominant metric, podium styling, and no repeated table columns.
                     page.evaluate(

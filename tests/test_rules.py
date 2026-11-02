@@ -198,10 +198,12 @@ def test_white_sum_remains_available_in_other_rows_after_lock():
 
 def test_rulebook_faq_is_embedded_in_web_interface():
     from qwixx_ai.web import HTML
-    for phrase in ('Qwixx rules & FAQ','White dice (everyone)','Colored die (active player only)',
+    for phrase in ('Rules & FAQ','White dice (everyone)','Colored die (active player only)',
                    'left to right','misthrow penalty','padlock','fourth misthrow penalty',
                    'highest score wins'):
         assert phrase in HTML
+    assert '<section id="rules-faq" class="rules-faq">' in HTML
+    assert '<summary>Qwixx rules & FAQ</summary>' not in HTML
 
 
 def test_color_dice_removed_and_lock_bonus():

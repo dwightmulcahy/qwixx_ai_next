@@ -89,6 +89,26 @@ def test_ai_strikes_use_visual_boxes_and_nonblocking_events():
     assert "Strikes: '+board.penalties+' / 4" not in html
 
 
+def test_rules_tab_is_direct_content_and_about_has_contact_links():
+    html = html_source()
+    assert '<section id="rules-faq" class="rules-faq">' in html
+    assert '<details id="rules-faq">' not in html
+    assert '<summary>Qwixx rules & FAQ</summary>' not in html
+    assert '<h2>Rules & FAQ</h2>' in html
+    assert "['about','About']" in html
+    assert 'id="about-qwixx"' in html
+    assert '<h2>About Qwixx AI</h2>' in html
+    assert '<h2>Get in Touch</h2>' in html
+    for href in (
+        "https://github.com/dwightmulcahy/qwixx_ai_next",
+        "https://github.com/dwightmulcahy/qwixx_ai_next/issues",
+        "https://www.linkedin.com/in/dwightmulcahy/",
+        "https://hub.docker.com/r/dwightmulcahy/qwixx-ai",
+        "https://github.com/dwightmulcahy",
+    ):
+        assert href in html
+
+
 def test_gameplay_preferences_are_in_a_dialog():
     html = html_source()
     for expected in (
