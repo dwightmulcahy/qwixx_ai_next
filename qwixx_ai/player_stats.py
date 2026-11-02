@@ -21,12 +21,21 @@ class PlayerStats:
         self.db.execute("""CREATE TABLE IF NOT EXISTS results (
             session_id TEXT PRIMARY KEY, player_id TEXT NOT NULL, difficulty TEXT NOT NULL,
             score INTEGER NOT NULL, penalties INTEGER NOT NULL, turns INTEGER NOT NULL,
-            scores TEXT NOT NULL, result TEXT NOT NULL, created REAL NOT NULL,
+            scores TEXT NOT NULL, result TEXT NOT NULL, place INTEGER NOT NULL, created REAL NOT NULL,
             FOREIGN KEY(player_id) REFERENCES players(id))""")
         self.db.execute("CREATE TABLE IF NOT EXISTS auth_codes (email TEXT PRIMARY KEY, digest TEXT NOT NULL, expires REAL NOT NULL, attempts INTEGER NOT NULL, sent REAL NOT NULL, name TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS auth_sessions (token_hash TEXT PRIMARY KEY, player_id TEXT NOT NULL, expires REAL NOT NULL)")
         columns={r[1] for r in self.db.execute("PRAGMA table_info(players)")}
         if "email" not in columns:self.db.execute("ALTER TABLE players ADD COLUMN email TEXT")
+        result_columns={r[1] for r in self.db.execute("PRAGMA table_info(results)")}
+        if "place" not in result_columns:self.db.execute("ALTER TABLE results ADD COLUMN place INTEGER")
+        for session_id,scores_json in self.db.execute("SELECT session_id,scores FROM results WHERE place IS NULL").fetchall():
+            try:
+                scores=json.loads(scores_json)
+                place=1+sum(score>scores[0] for score in scores[1:])
+            except (TypeError,ValueError,IndexError,json.JSONDecodeError):
+                continue
+            self.db.execute("UPDATE results SET place=? WHERE session_id=?",(place,session_id))
         self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_players_email ON players(email) WHERE email IS NOT NULL")
         self.db.commit()
 
@@ -146,12 +155,13 @@ class PlayerStats:
         self.profile(player_id)
         scores = game.scores()
         highest = max(scores)
+        place = 1 + sum(score > scores[0] for score in scores[1:])
         result = "tie" if scores[0] == highest and scores.count(highest) > 1 else ("win" if scores[0] == highest else "loss")
         with self.lock:
             cursor = self.db.execute(
-                "INSERT OR IGNORE INTO results VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO results (session_id,player_id,difficulty,score,penalties,turns,scores,result,place,created) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (session_id, player_id, difficulty, scores[0], game.boards[0].penalties,
-                 game.turn + 1, json.dumps(scores), result, time.time()))
+                 game.turn + 1, json.dumps(scores), result, place, time.time()))
             self.db.commit()
             return cursor.rowcount == 1
 
@@ -164,7 +174,7 @@ class PlayerStats:
         args = (pid, difficulty) if difficulty else (pid,)
         with self.lock:
             rows = self.db.execute(
-                "SELECT difficulty,score,penalties,turns,scores,result,created FROM results "
+                "SELECT difficulty,score,penalties,turns,scores,result,place,created FROM results "
                 + where + " ORDER BY created ASC, rowid ASC", args).fetchall()
         games = len(rows)
         wins = sum(row[5] == "win" for row in rows)
@@ -178,7 +188,8 @@ class PlayerStats:
             subset = [row for row in rows if row[0] == level]
             if subset:
                 by_difficulty[level] = {"games": len(subset), "wins": sum(r[5] == "win" for r in subset),
-                                        "average_score": round(sum(r[1] for r in subset) / len(subset), 1)}
+                                        "average_score": round(sum(r[1] for r in subset) / len(subset), 1),
+                                        "average_place": round(sum(r[6] for r in subset) / len(subset), 2)}
         return {
             "player": self.profile(pid), "games": games, "wins": wins,
             "losses": games - wins - ties, "ties": ties,
@@ -188,11 +199,12 @@ class PlayerStats:
             "lowest_score": min((r[1] for r in rows), default=None),
             "average_penalties": round(sum(r[2] for r in rows) / games, 2) if games else 0,
             "average_turns": round(sum(r[3] for r in rows) / games, 1) if games else 0,
+            "average_place": round(sum(r[6] for r in rows) / games, 2) if games else 0,
             "current_win_streak": streak, "longest_win_streak": longest,
             "by_difficulty": by_difficulty,
             "recent": [{"difficulty": r[0], "score": r[1], "penalties": r[2],
                         "turns": r[3], "scores": json.loads(r[4]), "result": r[5],
-                        "created": r[6]} for r in reversed(rows[-limit:])]
+                        "place": r[6], "created": r[7]} for r in reversed(rows[-limit:])]
         }
 
     def leaderboard(self, difficulty=None, limit=10):
@@ -208,26 +220,30 @@ class PlayerStats:
                 "SUM(CASE WHEN r.result='win' THEN 1 ELSE 0 END) AS wins, "
                 "SUM(CASE WHEN r.result='tie' THEN 1 ELSE 0 END) AS ties, "
                 "MAX(r.score) AS highest_score, ROUND(AVG(r.score),1) AS average_score, "
-                "SUM(r.score) AS total_points "
+                "SUM(r.score) AS total_points, ROUND(AVG(r.place),2) AS average_place "
                 "FROM results r JOIN players p ON p.id=r.player_id "
                 "WHERE p.email IS NOT NULL " + condition + " GROUP BY p.id, p.name", params
             ).fetchall()
         players = [dict(name=row[0], games=row[1], wins=row[2], ties=row[3],
                         highest_score=row[4], average_score=row[5], total_points=row[6],
-                        win_rate=round(100*row[2]/row[1], 1)) for row in rows]
+                        average_place=row[7], win_rate=round(100*row[2]/row[1], 1)) for row in rows]
         metrics = {
             "most_wins": ("wins", "games", "highest_score"),
             "highest_score": ("highest_score", "wins", "games"),
             "total_points": ("total_points", "wins", "games"),
             "average_score": ("average_score", "wins", "games"),
+            "average_place": ("average_place", "wins", "games"),
             "win_rate": ("win_rate", "wins", "games"),
             "most_games": ("games", "wins", "highest_score"),
         }
-        # Win-rate and average-score rankings require at least 5 completed games.
+        # Rate/average rankings require at least 5 completed games.
         rankings = {}
         for name, keys in metrics.items():
-            eligible = [p for p in players if p["games"] >= 5] if name in ("win_rate", "average_score") else players
-            ordered = sorted(eligible, key=lambda p: tuple(-p[key] for key in keys)+(p["name"].casefold(),))
+            eligible = [p for p in players if p["games"] >= 5] if name in ("win_rate", "average_score", "average_place") else players
+            if name == "average_place":
+                ordered = sorted(eligible, key=lambda p: (p["average_place"],-p["wins"],-p["games"],p["name"].casefold()))
+            else:
+                ordered = sorted(eligible, key=lambda p: tuple(-p[key] for key in keys)+(p["name"].casefold(),))
             rankings[name] = ordered[:limit]
         return {"difficulty": difficulty or "all", "minimum_games_for_rates": 5,
                 "registered_players": len(players), "rankings": rankings}
