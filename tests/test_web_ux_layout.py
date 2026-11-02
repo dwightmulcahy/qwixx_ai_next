@@ -551,6 +551,8 @@ def test_leaderboard_cards_use_single_metric_and_podium_styling():
     assert "p.games+' games',meta:p=>p.wins+' wins · '+p.win_rate+'% win rate'" in leaderboard
     assert "key:'average_place',label:'Best average place'" in leaderboard
     assert "p.average_place+' avg place'" in leaderboard
+    assert "key:'longest_win_streak',label:'Longest winning streak'" in leaderboard
+    assert "p.longest_win_streak+' wins'" in leaderboard
 
 
 def test_career_stats_show_average_place_and_recent_place():
@@ -571,6 +573,7 @@ def test_top10_cards_follow_requested_metric_order():
         "key:'win_rate'",
         "key:'average_place'",
         "key:'average_score'",
+        "key:'longest_win_streak'",
         "key:'most_wins'",
         "key:'total_points'",
         "key:'most_games'",
