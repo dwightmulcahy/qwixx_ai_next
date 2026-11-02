@@ -175,6 +175,11 @@ def main():
                             thinkingActor = null;
                             thinkingVisible = false;
                             optimisticAction = null;
+                            window.__smokeRafQueue = [];
+                            window.requestAnimationFrame = cb => {
+                                window.__smokeRafQueue.push(cb);
+                                return window.__smokeRafQueue.length;
+                            };
                             api = async () => new Promise(() => {});
                             render();
                             confirmPhase();
@@ -182,6 +187,12 @@ def main():
                     )
                     assert page.locator(".number-cell.optimistic-mark").is_visible()
                     assert page.locator(".ai-thinking").count() == 0
+                    page.evaluate(
+                        "() => { const queued=[...window.__smokeRafQueue]; window.__smokeRafQueue=[]; queued.forEach(cb=>cb(performance.now())); }"
+                    )
+                    page.evaluate(
+                        "() => { const queued=[...window.__smokeRafQueue]; window.__smokeRafQueue=[]; queued.forEach(cb=>cb(performance.now())); }"
+                    )
                     page.wait_for_function("document.querySelector('.ai-thinking') !== null", timeout=3000)
                     assert page.locator(".number-cell.optimistic-mark").is_visible()
 
