@@ -298,6 +298,21 @@ def test_training_dashboard_link_and_status():
     assert "Training ${x.paused?'PAUSED':'ACTIVE'}" in DASHBOARD_HTML
 
 
+def test_dialog_player_names_use_registered_identity_with_guest_fallback():
+    from qwixx_ai.web import HTML
+
+    for expected in (
+        "function humanDialogName()",
+        "function dialogPlayerName(i)",
+        "verifiedPlayer&&playMode()==='registered'&&verifiedPlayer.name",
+        ":'Guest'",
+        "rankings=state.scores.map((score,i)=>({name:dialogPlayerName(i),score}))",
+        "tie for 1st!",
+    ):
+        assert expected in HTML, expected
+    assert "rankings=state.scores.map((score,i)=>({name:playerNames[i],score}))" not in HTML
+
+
 def test_step_two_strike_warning_confirms_only_when_legal_marks_exist():
     from qwixx_ai.web import HTML
 
@@ -453,7 +468,7 @@ def test_penalty_popup_identifies_players_and_point_loss():
     assert "penaltySession=next.session_id||previous.session_id" in HTML
     assert "penaltySession!==state.session_id" in HTML
     assert "board.penalties>before" in HTML
-    assert "playerNames[i]||'Player '" in HTML
+    assert "dialogPlayerName(i),count:board.penalties-before" in HTML
     assert "change.name+' received '+change.count+' X'" in HTML
     assert "' points).'" in HTML
     assert "showNewPenalties(previous,next)" in HTML

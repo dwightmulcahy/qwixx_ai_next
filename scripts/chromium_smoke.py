@@ -215,6 +215,9 @@ def main():
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
 
+                    # Dialogs use the signed-in display name instead of generic "You".
+                    page.evaluate("() => { verifiedPlayer={name:'dWiGhT'}; setPlayMode('registered'); }")
+
                     # Passing despite a legal mark and taking a strike uses the styled confirmation dialog.
                     page.evaluate(
                         """() => {
@@ -230,6 +233,8 @@ def main():
                     decision = page.locator("#decision-modal")
                     decision.wait_for(state="visible", timeout=5000)
                     assert decision.get_by_text("Take a missed-throw penalty?", exact=True).is_visible()
+                    assert "dWiGhT" in decision.inner_text()
+                    assert "dWiGhT's score" in decision.inner_text()
                     assert "−5 point penalty" in decision.inner_text()
                     assert decision.get_by_role("button", name="Pass anyway (−5)").is_visible()
                     decision.get_by_role("button", name="Cancel").click()
@@ -252,11 +257,57 @@ def main():
                     decision.wait_for(state="visible", timeout=5000)
                     assert decision.get_by_text("Lock the Yellow row?", exact=True).is_visible()
                     assert "who can close this row?" in decision.inner_text().lower()
+                    assert "dWiGhT" in decision.inner_text()
                     assert "will close if you continue" in decision.inner_text()
                     assert "second locked row" in decision.inner_text()
                     assert "Projected final scores" in decision.inner_text()
                     decision.get_by_role("button", name="Cancel").click()
                     assert decision.is_hidden()
+
+                    # Game Over names the registered player and handles ties correctly.
+                    page.evaluate(
+                        """() => {
+                            state.done = true;
+                            state.scores = [84,78,59,53];
+                            gameOverShown = false;
+                            showGameOver();
+                        }"""
+                    )
+                    game_over = page.locator("#game-over-modal")
+                    game_over.wait_for(state="visible", timeout=5000)
+                    assert "dWiGhT wins!" in game_over.inner_text()
+                    assert "dWiGhT: 84" in game_over.inner_text()
+                    assert "You wins!" not in game_over.inner_text()
+                    game_over.get_by_role("button", name="View final scorecards").click()
+                    assert game_over.count() == 0
+
+                    page.evaluate(
+                        """() => {
+                            state.scores = [84,84,59,53];
+                            gameOverShown = false;
+                            showGameOver();
+                        }"""
+                    )
+                    game_over.wait_for(state="visible", timeout=5000)
+                    assert "dWiGhT and AI-Sir Rolls-a-Lot tie for 1st!" in game_over.inner_text()
+                    game_over.get_by_role("button", name="View final scorecards").click()
+
+                    # Guest mode intentionally hides the authenticated identity.
+                    page.evaluate(
+                        """() => {
+                            setPlayMode('guest');
+                            state.scores = [84,78,59,53];
+                            gameOverShown = false;
+                            showGameOver();
+                        }"""
+                    )
+                    game_over.wait_for(state="visible", timeout=5000)
+                    assert "Guest wins!" in game_over.inner_text()
+                    assert "dWiGhT" not in game_over.inner_text()
+                    game_over.get_by_role("button", name="View final scorecards").click()
+                    # This smoke session started as Guest and has no real auth cookie; restore that
+                    # mode before the final reload so startup resumes the existing guest game.
+                    page.evaluate("setPlayMode('guest')")
 
                     # Leaderboard cards use one dominant metric, podium styling, and no repeated table columns.
                     page.evaluate(
