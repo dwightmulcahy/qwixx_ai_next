@@ -282,12 +282,12 @@ async function showLeaderboard(){
   if(!response.ok)throw Error('Leaderboard unavailable (HTTP '+response.status+')');
   const data=await response.json();
   const metric=[
-   {key:'most_wins',label:'Most wins',field:'wins',icon:'🏆',format:p=>p.wins+' wins',meta:p=>p.games+' games · '+p.win_rate+'% win rate'},
    {key:'highest_score',label:'Highest single-game score',field:'highest_score',icon:'🎯',format:p=>p.highest_score+' pts',meta:p=>p.games+' games · '+p.wins+' wins'},
-   {key:'total_points',label:'Most total points',field:'total_points',icon:'⭐',format:p=>Number(p.total_points).toLocaleString()+' pts',meta:p=>p.games+' games · '+p.average_score+' avg'},
-   {key:'average_score',label:'Best average score',field:'average_score',icon:'📈',format:p=>p.average_score+' avg',meta:p=>p.games+' games · high '+p.highest_score},
-   {key:'average_place',label:'Best average place',field:'average_place',icon:'🏁',format:p=>p.average_place+' avg place',meta:p=>p.games+' games · '+p.win_rate+'% win rate'},
    {key:'win_rate',label:'Best win rate',field:'win_rate',icon:'🔥',format:p=>p.win_rate+'%',meta:p=>p.games+' games · '+p.wins+' wins'},
+   {key:'average_place',label:'Best average place',field:'average_place',icon:'🏁',format:p=>p.average_place+' avg place',meta:p=>p.games+' games · '+p.win_rate+'% win rate'},
+   {key:'average_score',label:'Best average score',field:'average_score',icon:'📈',format:p=>p.average_score+' avg',meta:p=>p.games+' games · high '+p.highest_score},
+   {key:'most_wins',label:'Most wins',field:'wins',icon:'🏆',format:p=>p.wins+' wins',meta:p=>p.games+' games · '+p.win_rate+'% win rate'},
+   {key:'total_points',label:'Most total points',field:'total_points',icon:'⭐',format:p=>Number(p.total_points).toLocaleString()+' pts',meta:p=>p.games+' games · '+p.average_score+' avg'},
    {key:'most_games',label:'Most games played',field:'games',icon:'🎲',format:p=>p.games+' games',meta:p=>p.wins+' wins · '+p.win_rate+'% win rate'}
   ];
   const rankIcon=i=>i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1);
