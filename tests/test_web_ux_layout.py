@@ -622,11 +622,12 @@ def test_top10_cards_follow_requested_metric_order():
 
 def test_leaderboard_defaults_to_champion_and_separates_difficulties():
     html = html_source()
-    assert "select?select.value:'champion'" in html
-    assert "['champion','🏆 Champion']" in html
-    assert "['advanced','Advanced']" in html
-    assert "['intermediate','Intermediate']" in html
-    assert "['beginner','Beginner']" in html
-    assert "['','All difficulties']" not in html
-    assert "results never mix across difficulty levels" in html
-    assert "?difficulty='+encodeURIComponent(difficulty)" in html
+    leaderboard = html.split("async function showLeaderboard(){", 1)[1].split("function escapeHtml(value)", 1)[0]
+    assert "select?select.value:'champion'" in leaderboard
+    assert "['champion','🏆 Champion']" in leaderboard
+    assert "['advanced','Advanced']" in leaderboard
+    assert "['intermediate','Intermediate']" in leaderboard
+    assert "['beginner','Beginner']" in leaderboard
+    assert "['','All difficulties']" not in leaderboard
+    assert "results never mix across difficulty levels" in leaderboard
+    assert "?difficulty='+encodeURIComponent(difficulty)" in leaderboard
