@@ -109,6 +109,15 @@ def test_rules_tab_is_direct_content_and_about_has_contact_links():
         assert href in html
 
 
+def test_rules_tab_includes_bug_and_improvement_reporting():
+    html = html_source()
+    assert "How to report a bug or improvement" in html
+    assert "Found something broken, or have an idea that would make Qwixx AI more useful?" in html
+    assert "https://forms.gle/aW5nNFJWVfLQaX287" in html
+    assert "every submission gets tracked so nothing gets lost" in html
+    assert 'class="report-help"' in html
+
+
 def test_gameplay_preferences_are_in_a_dialog():
     html = html_source()
     for expected in (
