@@ -155,6 +155,27 @@ def test_mark_renders_before_thinking_indicator():
         assert expected in html, expected
 
 
+def test_dialogs_personalize_the_human_player_name():
+    html = html_source()
+    for expected in (
+        "function humanDialogName()",
+        "function dialogPlayerName(i)",
+        "function humanDialogPossessive()",
+        "verifiedPlayer&&playMode()==='registered'&&verifiedPlayer.name",
+        ":'Guest'",
+        "dialogPlayerName(i),count:board.penalties-before",
+        "escapeHtml(dialogPlayerName(x.i))",
+        "escapeHtml(dialogPlayerName(p.actor))",
+        "rankings=state.scores.map((score,i)=>({name:dialogPlayerName(i),score}))",
+        "winners.length===1?escapeHtml(winners[0].name)+' wins!'",
+        "tie for 1st!",
+    ):
+        assert expected in html, expected
+    assert "rankings=state.scores.map((score,i)=>({name:playerNames[i],score}))" not in html
+    assert "x.i===0?'You':escapeHtml(playerNames[x.i])" not in html
+    assert "p.actor===0?'You':escapeHtml(playerNames[p.actor]" not in html
+
+
 def test_penalty_pass_and_lock_use_styled_confirmation_dialogs():
     html = html_source()
     for expected in (
@@ -400,10 +421,17 @@ vm.runInContext("render();if(autoPassTimer){clearTimeout(autoPassTimer);autoPass
 const automaticPass=el("boards").innerHTML;
 assert.match(automaticPass,/⚡ AUTO PASS · No legal marks available/);
 
+// Dialogs use the registered player's display name instead of the generic "You".
+vm.runInContext("verifiedPlayer={name:'dWiGhT'};setPlayMode('registered')",context);
+assert.equal(vm.runInContext("humanDialogName()",context),"dWiGhT");
+assert.equal(vm.runInContext("dialogPlayerName(0)",context),"dWiGhT");
+
 // Passing with a legal mark available on the active player's second step must confirm.
 vm.runInContext("state.phase=state.boards.length;state.actor=0;state.roller=0;state.active_marks=0;state.legal=[[0,6,false]];state.scores=[20,25,18,12];moving=false;skipPhase()",context);
 assert.equal(el("decision-modal").hidden,false);
 assert.equal(el("decision-title").textContent,"Take a missed-throw penalty?");
+assert.match(el("decision-body").innerHTML,/dWiGhT/);
+assert.match(el("decision-body").innerHTML,/dWiGhT&#39;s score/);
 assert.match(el("decision-body").innerHTML,/legal mark/);
 assert.match(el("decision-body").innerHTML,/−5 point penalty/);
 assert.equal(el("decision-confirm").textContent,"Pass anyway (−5)");
@@ -430,7 +458,8 @@ vm.runInContext("cancelDecision()",context);
 vm.runInContext("state.turn=7;state.phase=1;state.actor=0;state.roller=3;state.dice=[6,6,1,1,1,1];state.locks=['yellow'];state.white_locks=['yellow'];state.action_history=[{turn:8,phase:0,actor:3,action:[1,12,true]}];state.boards[0].rows[1]=[2,3,4,5,6];state.boards[1].rows[1]=[2,3,4,5,6];state.boards[2].rows[1]=[2,3,4,5,6];pending=[1,12,true];confirmPhase()",context);
 const participants=el("decision-body").innerHTML;
 assert.match(participants,/Who can close this row\?/);
-assert.match(participants,/You/);
+assert.match(participants,/dWiGhT/);
+assert.doesNotMatch(participants,/>You</);
 assert.match(participants,/will close if you continue/);
 assert.match(participants,/AI-Count von Qwixx/);
 assert.match(participants,/already closed this roll/);
@@ -438,6 +467,12 @@ assert.match(participants,/AI-Sir Rolls-a-Lot/);
 assert.match(participants,/can also close this roll/);
 assert.match(participants,/AI-Dicey McDiceface/);
 vm.runInContext("cancelDecision()",context);
+
+// Guest play must not leak the authenticated player's name into dialogs.
+vm.runInContext("setPlayMode('guest')",context);
+assert.equal(vm.runInContext("humanDialogName()",context),"Guest");
+assert.equal(vm.runInContext("dialogPlayerName(0)",context),"Guest");
+vm.runInContext("setPlayMode('registered')",context);
 
 vm.runInContext("state.done=true;state.locks=['red','yellow','blue'];state.boards[0].rows[2]=[12,11,10,9,8];state.boards[1].rows[2]=[12,11,10,9,8,7,6,5];state.boards[2].rows[2]=[12,11,10,9,8,7,6,5,4];state.boards[3].rows[2]=[12,11,10,9,8,7];render()",context);
 const ended=el("boards").innerHTML;
