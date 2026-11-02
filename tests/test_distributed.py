@@ -419,7 +419,7 @@ def test_account_tab_unhides_career_and_displays_full_game_history():
     assert "if(id==='account'&&typeof showStats==='function')showStats()" in HTML
     for field in ("Current win streak", "Longest win streak", "Highest score", "Lowest score",
                   "All player scores", "Results by AI difficulty", "Recent completed games",
-                  "Average penalties", "Average turns", "Win rate"):
+                  "Average penalties", "Average turns", "Average place", "Win rate"):
         assert field in HTML
     assert "/api/player-stats?limit=100" in HTML
 

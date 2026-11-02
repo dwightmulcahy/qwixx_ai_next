@@ -521,8 +521,8 @@ def test_leaderboard_cards_use_single_metric_and_podium_styling():
         "leaderboard-card-header", "leaderboard-list", "leaderboard-row",
         "leaderboard-rank", "leaderboard-value", "metric-most_wins",
         "metric-highest_score", "metric-total_points", "metric-average_score",
-        "metric-win_rate", "metric-most_games",
-        "🥇", "🥈", "🥉", "🏆", "🎯", "⭐", "📈", "🔥", "🎲",
+        "metric-average_place", "metric-win_rate", "metric-most_games",
+        "🥇", "🥈", "🥉", "🏆", "🎯", "⭐", "📈", "🏁", "🔥", "🎲",
         "m.meta(p)", "m.format(p)",
     ):
         assert expected in leaderboard or expected in html, expected
@@ -532,6 +532,18 @@ def test_leaderboard_cards_use_single_metric_and_podium_styling():
     assert "Most wins</th>" not in leaderboard
     assert "p.wins+' wins',meta:p=>p.games+' games · '+p.win_rate+'% win rate'" in leaderboard
     assert "p.games+' games',meta:p=>p.wins+' wins · '+p.win_rate+'% win rate'" in leaderboard
+    assert "key:'average_place',label:'Best average place'" in leaderboard
+    assert "p.average_place+' avg place'" in leaderboard
+
+
+def test_career_stats_show_average_place_and_recent_place():
+    html = html_source()
+    stats = html.split("async function showStats(){", 1)[1].split("async function showLeaderboard(){", 1)[0]
+    assert "['Average place',data.average_place]" in stats
+    assert "<th>Average place</th>" in stats
+    assert "<th>Place</th><th>Your score</th>" in stats
+    assert "d?d.average_place:'—'" in stats
+    assert "fmt(g.place)" in stats
 
 
 def test_leaderboard_defaults_to_champion_and_separates_difficulties():
