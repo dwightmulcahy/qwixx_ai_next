@@ -342,7 +342,7 @@ function confirmPenaltyPass(){const legal=state.legal.length,current=state.score
 function selectMark(action){if(moving||!state||state.done)return;if(quickMarkEnabled()){pending=action;if(action[2]){confirmLockAction(action);return}act(action);return}pending=pending&&pending[0]===action[0]&&pending[1]===action[1]?null:action;render()}
 function clearSelection(){pending=null;render()}
 function confirmPhase(){if(!pending)return;if(pending[2]){confirmLockAction(pending);return}act(pending)}
-async function backToStep1(){if(moving||!state||state.done||!state.can_undo_step1)return;moving=true;try{const next=await api('/undo-step1',{session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){state=next;pending=null;render()}}finally{moving=false;if(state)render()}}
+async function backToStep1(){if(moving||!state||state.done||!state.can_undo_step1)return;moving=true;try{const next=await api('/undo-step1',{session_id:state.session_id,expected_turn:state.turn,expected_phase:state.phase});if(next){if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}autoPassKey='';state=next;pending=null;render()}}finally{moving=false;if(state)render()}}
 function skipPhase(){if(!state||state.done||moving)return;if(shouldConfirmPenaltyPass()){confirmPenaltyPass();return}act(null)}
 function maybeAutoPass(){if(preference(AUTO_PASS_KEY,'on')!=='on'||!state||state.done||moving||state.actor!==0||state.legal.length!==0){if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}return}const key=state.session_id+':'+state.turn+':'+state.phase;if(autoPassKey===key)return;autoPassKey=key;if(autoPassTimer)clearTimeout(autoPassTimer);autoPassTimer=setTimeout(()=>{autoPassTimer=null;if(!state||state.done||moving||state.actor!==0||state.legal.length!==0)return;const current=state.session_id+':'+state.turn+':'+state.phase;if(current!==key)return;act(null)},650)}
 const colors=['red','yellow','green','blue'],names=['Red','Yellow','Green','Blue'];
@@ -462,9 +462,10 @@ class Session:
 
     def can_undo_step1(self):
         g=self.game
-        return (self.step1_snapshot is not None and not g.done and
+        snapshot_game=self.step1_snapshot[0] if self.step1_snapshot is not None else None
+        return (snapshot_game is not None and not g.done and
                 g.active==0 and g.phase==g.n and
-                self.step1_snapshot[0].turn==g.turn)
+                snapshot_game.turn==g.turn and bool(snapshot_game.legal()))
 
     def advance(self):
         try:
