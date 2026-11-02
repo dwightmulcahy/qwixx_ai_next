@@ -336,9 +336,9 @@ def main():
                         """() => {
                             const originalFetch = fetch;
                             const players = [
-                                {name:'dWiGhT',games:136,wins:26,ties:3,highest_score:181,average_score:102.4,average_place:2.14,total_points:13926,win_rate:19.1},
-                                {name:'Roll Master',games:98,wins:21,ties:2,highest_score:175,average_score:99.8,average_place:2.31,total_points:9780,win_rate:21.4},
-                                {name:'Dice Queen',games:84,wins:19,ties:1,highest_score:169,average_score:104.1,average_place:2.48,total_points:8744,win_rate:22.6}
+                                {name:'dWiGhT',games:136,wins:26,ties:3,highest_score:181,average_score:102.4,average_place:2.14,longest_win_streak:7,total_points:13926,win_rate:19.1},
+                                {name:'Roll Master',games:98,wins:21,ties:2,highest_score:175,average_score:99.8,average_place:2.31,longest_win_streak:5,total_points:9780,win_rate:21.4},
+                                {name:'Dice Queen',games:84,wins:19,ties:1,highest_score:169,average_score:104.1,average_place:2.48,longest_win_streak:4,total_points:8744,win_rate:22.6}
                             ];
                             fetch = async (url, options) => {
                                 if (String(url).startsWith('/api/leaderboard')) {
@@ -352,6 +352,7 @@ def main():
                                             total_points:players,
                                             average_score:players,
                                             average_place:players,
+                                            longest_win_streak:players,
                                             win_rate:players,
                                             most_games:players
                                         }
@@ -365,7 +366,7 @@ def main():
                     leaderboard = page.locator("#leaderboard")
                     leaderboard.get_by_text("Most wins", exact=True).wait_for(state="visible", timeout=5000)
                     assert leaderboard.locator("table").count() == 0
-                    assert leaderboard.locator(".leaderboard-card").count() == 7
+                    assert leaderboard.locator(".leaderboard-card").count() == 8
                     wins_card = leaderboard.locator(".leaderboard-card.metric-most_wins")
                     assert "🥇" in wins_card.locator(".leaderboard-row").first.inner_text()
                     assert "26 wins" in wins_card.locator(".leaderboard-row").first.inner_text()
@@ -377,6 +378,9 @@ def main():
                     assert place_card.get_by_text("Best average place", exact=True).is_visible()
                     assert "2.14 avg place" in place_card.locator(".leaderboard-row").first.inner_text()
                     assert "136 games · 19.1% win rate" in place_card.locator(".leaderboard-row").first.inner_text()
+                    streak_card = leaderboard.locator(".leaderboard-card.metric-longest_win_streak")
+                    assert streak_card.get_by_text("Longest winning streak", exact=True).is_visible()
+                    assert "7 wins" in streak_card.locator(".leaderboard-row").first.inner_text()
 
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
