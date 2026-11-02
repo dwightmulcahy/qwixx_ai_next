@@ -204,6 +204,8 @@ def test_rulebook_faq_is_embedded_in_web_interface():
         assert phrase in HTML
     assert '<section id="rules-faq" class="rules-faq">' in HTML
     assert '<summary>Qwixx rules & FAQ</summary>' not in HTML
+    assert 'How to report a bug or improvement' in HTML
+    assert 'https://forms.gle/aW5nNFJWVfLQaX287' in HTML
 
 
 def test_color_dice_removed_and_lock_bonus():

@@ -349,6 +349,12 @@ def main():
                     assert rules_panel.locator("details#rules-faq").count() == 0
                     assert rules_panel.get_by_text("White dice (everyone)", exact=True).is_visible()
 
+                    report_help = rules_panel.locator("#report")
+                    assert report_help.get_by_role("heading", name="How to report a bug or improvement", exact=True).is_visible()
+                    report_link = report_help.get_by_role("link", name="Report it here", exact=True)
+                    assert report_link.is_visible()
+                    assert report_link.get_attribute("href") == "https://forms.gle/aW5nNFJWVfLQaX287"
+
                     # About includes project context and clear contact paths.
                     page.get_by_role("tab", name="About", exact=True).click()
                     about_panel = page.locator("#section-about")
