@@ -206,6 +206,15 @@ def test_legal_moves_are_visually_prominent():
     assert "@keyframes available-pulse" in html
 
 
+def test_back_to_step1_resets_auto_pass_dedupe_and_server_controls_availability():
+    html = html_source()
+    for expected in (
+        "if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}autoPassKey='';state=next",
+        "state.can_undo_step1?'<button onclick=\"backToStep1()\">← Back to Step 1</button>':''",
+    ):
+        assert expected in html, expected
+
+
 def test_auto_pass_is_a_gameplay_preference():
     html = html_source()
     for expected in (

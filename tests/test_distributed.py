@@ -144,6 +144,48 @@ def test_difficulty_selection_and_explanations():
     with pytest.raises(ValueError):Session(difficulty='impossible')
 
 
+def test_back_to_step1_is_not_offered_after_no_move_auto_pass():
+    from qwixx_ai.web import Session
+
+    session=Session()
+    session.ai=lambda game: None
+    game=session.game
+    game.active=0;game.phase=0;game.turn=4;game.dice=(6,6,1,1,1,1)
+    game.boards[0].rows[2]=[11]
+    game.boards[0].rows[3]=[11]
+    assert game.legal()==[]
+
+    session.apply_action(None,'human')
+    session.advance()
+
+    assert session.game.phase==session.game.n
+    assert session.game.actor==0
+    assert session.step1_snapshot is not None
+    assert session.step1_snapshot[0].legal()==[]
+    assert not session.can_undo_step1()
+    assert session.view()['can_undo_step1'] is False
+
+
+def test_back_to_step1_remains_available_after_voluntary_pass_with_legal_moves():
+    from qwixx_ai.web import Session
+
+    session=Session()
+    session.ai=lambda game: None
+    game=session.game
+    game.active=0;game.phase=0;game.turn=4;game.dice=(1,1,1,1,1,1)
+    assert game.legal()
+
+    session.apply_action(None,'human')
+    session.advance()
+
+    assert session.game.phase==session.game.n
+    assert session.can_undo_step1()
+    session.undo_step1()
+    assert session.game.phase==0
+    assert session.game.actor==0
+    assert session.game.legal()
+
+
 def test_training_pause_and_resume(tmp_path,monkeypatch):
     from qwixx_ai import distributed
     monkeypatch.setattr(distributed,'ROOT',tmp_path)
