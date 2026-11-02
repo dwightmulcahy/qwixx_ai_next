@@ -563,6 +563,22 @@ def test_career_stats_show_average_place_and_recent_place():
     assert "fmt(g.place)" in stats
 
 
+def test_top10_cards_follow_requested_metric_order():
+    html = html_source()
+    leaderboard = html.split("const metric=[", 1)[1].split("];", 1)[0]
+    expected = [
+        "key:'highest_score'",
+        "key:'win_rate'",
+        "key:'average_place'",
+        "key:'average_score'",
+        "key:'most_wins'",
+        "key:'total_points'",
+        "key:'most_games'",
+    ]
+    positions = [leaderboard.index(item) for item in expected]
+    assert positions == sorted(positions)
+
+
 def test_leaderboard_defaults_to_champion_and_separates_difficulties():
     html = html_source()
     assert "select?select.value:'champion'" in html
