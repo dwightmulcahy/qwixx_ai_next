@@ -359,6 +359,34 @@ def main():
                     assert about_panel.get_by_role("link", name="LinkedIn Profile").is_visible()
                     page.get_by_role("tab", name="Play", exact=True).click()
 
+                    # AI Stats aggregates the three fixed opponents and supports difficulty filtering.
+                    page.evaluate(
+                        """() => {
+                            const previousFetch = fetch;
+                            fetch = async (url, options) => {
+                                if (String(url).startsWith('/api/ai-stats')) {
+                                    return new Response(JSON.stringify({
+                                        difficulty:'all',
+                                        games:165,
+                                        players:[
+                                            {name:'AI-Sir Rolls-a-Lot',games:165,wins:58,losses:101,ties:6,win_rate:35.2,average_score:88.4,highest_score:167,lowest_score:28,average_place:2.18,current_win_streak:1,longest_win_streak:6},
+                                            {name:'AI-Dicey McDiceface',games:165,wins:49,losses:109,ties:7,win_rate:29.7,average_score:84.2,highest_score:159,lowest_score:24,average_place:2.39,current_win_streak:0,longest_win_streak:5},
+                                            {name:'AI-Count von Qwixx',games:165,wins:43,losses:116,ties:6,win_rate:26.1,average_score:81.7,highest_score:151,lowest_score:19,average_place:2.52,current_win_streak:0,longest_win_streak:4}
+                                        ]
+                                    }), {status:200,headers:{'Content-Type':'application/json'}});
+                                }
+                                return previousFetch(url, options);
+                            };
+                            showTab('ai-stats');
+                        }"""
+                    )
+                    ai_stats = page.locator("#section-ai-stats")
+                    ai_stats.get_by_role("heading", name="🤖 AI Overall Statistics", exact=True).wait_for(state="visible", timeout=5000)
+                    assert ai_stats.locator(".ai-stat-card").count() == 3
+                    assert ai_stats.get_by_text("AI-Sir Rolls-a-Lot", exact=True).is_visible()
+                    assert ai_stats.get_by_text("165 tracked games in this view", exact=True).is_visible()
+                    assert ai_stats.get_by_text("35.2%", exact=True).is_visible()
+
                     # Leaderboard cards use one dominant metric, podium styling, and no repeated table columns.
                     page.evaluate(
                         """() => {
