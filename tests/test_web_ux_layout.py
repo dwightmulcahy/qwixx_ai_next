@@ -66,6 +66,13 @@ def test_play_layout_keeps_turn_controls_with_dice_and_analysis_below_scorecard(
     assert "document.getElementById('actions')" not in html
 
 
+def test_pass_is_always_the_final_move_button():
+    html = html_source()
+    controls = html.split("const buttons=state.done?", 1)[1].split("const shortcuts=", 1)[0]
+    assert controls.index('onclick="backToStep1()"') < controls.index('onclick="skipPhase()"')
+    assert controls.rfind('onclick="skipPhase()"') > controls.rfind('onclick="backToStep1()"')
+
+
 def test_gameplay_preferences_are_in_a_dialog():
     html = html_source()
     for expected in (
