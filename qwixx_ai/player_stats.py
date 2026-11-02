@@ -207,6 +207,66 @@ class PlayerStats:
                         "place": r[6], "created": r[7]} for r in reversed(rows[-limit:])]
         }
 
+    def ai_stats(self, difficulty=None):
+        """Aggregate historical performance for the three fixed AI seats."""
+        if difficulty is not None and difficulty not in ("beginner", "intermediate", "advanced", "champion"):
+            raise ValueError("Invalid difficulty")
+        condition = "WHERE difficulty=?" if difficulty else ""
+        params = (difficulty,) if difficulty else ()
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT scores,created FROM results " + condition + " ORDER BY created ASC,rowid ASC",
+                params,
+            ).fetchall()
+        names = ("AI-Sir Rolls-a-Lot", "AI-Dicey McDiceface", "AI-Count von Qwixx")
+        accum = [
+            dict(name=name, games=0, wins=0, losses=0, ties=0, total_score=0,
+                 highest_score=None, lowest_score=None, total_place=0,
+                 current_win_streak=0, longest_win_streak=0)
+            for name in names
+        ]
+        valid_games = 0
+        for scores_json, _created in rows:
+            try:
+                scores = json.loads(scores_json)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(scores, list) or len(scores) < 4:
+                continue
+            valid_games += 1
+            highest = max(scores)
+            for seat, stat in enumerate(accum, start=1):
+                score = scores[seat]
+                place = 1 + sum(other > score for other in scores)
+                tied_first = score == highest and scores.count(highest) > 1
+                won = score == highest and not tied_first
+                stat["games"] += 1
+                stat["wins"] += int(won)
+                stat["ties"] += int(tied_first)
+                stat["losses"] += int(not won and not tied_first)
+                stat["total_score"] += score
+                stat["total_place"] += place
+                stat["highest_score"] = score if stat["highest_score"] is None else max(stat["highest_score"], score)
+                stat["lowest_score"] = score if stat["lowest_score"] is None else min(stat["lowest_score"], score)
+                stat["current_win_streak"] = stat["current_win_streak"] + 1 if won else 0
+                stat["longest_win_streak"] = max(stat["longest_win_streak"], stat["current_win_streak"])
+        players = []
+        for stat in accum:
+            games = stat.pop("games")
+            total_score = stat.pop("total_score")
+            total_place = stat.pop("total_place")
+            players.append({
+                "name": stat["name"], "games": games, "wins": stat["wins"],
+                "losses": stat["losses"], "ties": stat["ties"],
+                "win_rate": round(100 * stat["wins"] / games, 1) if games else 0,
+                "average_score": round(total_score / games, 1) if games else 0,
+                "highest_score": stat["highest_score"], "lowest_score": stat["lowest_score"],
+                "average_place": round(total_place / games, 2) if games else 0,
+                "current_win_streak": stat["current_win_streak"],
+                "longest_win_streak": stat["longest_win_streak"],
+            })
+        return {"difficulty": difficulty or "all", "games": valid_games, "players": players}
+
     def leaderboard(self, difficulty=None, limit=10):
         """Public rankings of verified registered players with completed games."""
         if difficulty is not None and difficulty not in ("beginner", "intermediate", "advanced", "champion"):

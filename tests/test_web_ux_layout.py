@@ -551,6 +551,24 @@ def test_locked_row_tooltips_identify_locking_players():
     assert 'title="'+ "'+escapeHtml(lockTooltip(colors[c]))+" in html
 
 
+def test_ai_stats_tab_uses_historical_scores_and_difficulty_filter():
+    html = html_source()
+    assert "['ai-stats','AI Stats']" in html
+    assert "async function showAiStats()" in html
+    assert "/api/ai-stats" in html
+    for expected in (
+        "AI Overall Statistics",
+        "All difficulties",
+        "Average place",
+        "Average score",
+        "Highest score",
+        "Lowest score",
+        "Longest win streak",
+        "Guest games are not recorded",
+    ):
+        assert expected in html, expected
+
+
 def test_leaderboard_cards_use_single_metric_and_podium_styling():
     html = html_source()
     leaderboard = html.split("async function showLeaderboard(){", 1)[1].split("function escapeHtml(value)", 1)[0]
@@ -604,11 +622,12 @@ def test_top10_cards_follow_requested_metric_order():
 
 def test_leaderboard_defaults_to_champion_and_separates_difficulties():
     html = html_source()
-    assert "select?select.value:'champion'" in html
-    assert "['champion','🏆 Champion']" in html
-    assert "['advanced','Advanced']" in html
-    assert "['intermediate','Intermediate']" in html
-    assert "['beginner','Beginner']" in html
-    assert "['','All difficulties']" not in html
-    assert "results never mix across difficulty levels" in html
-    assert "?difficulty='+encodeURIComponent(difficulty)" in html
+    leaderboard = html.split("async function showLeaderboard(){", 1)[1].split("function escapeHtml(value)", 1)[0]
+    assert "select?select.value:'champion'" in leaderboard
+    assert "['champion','🏆 Champion']" in leaderboard
+    assert "['advanced','Advanced']" in leaderboard
+    assert "['intermediate','Intermediate']" in leaderboard
+    assert "['beginner','Beginner']" in leaderboard
+    assert "['','All difficulties']" not in leaderboard
+    assert "results never mix across difficulty levels" in leaderboard
+    assert "?difficulty='+encodeURIComponent(difficulty)" in leaderboard

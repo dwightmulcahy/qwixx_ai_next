@@ -333,19 +333,29 @@ def test_player_stats_route_accepts_plain_url_and_filters():
     assert "self.path=='/api/player-stats' or self.path.startswith('/api/player-stats?')" in source
 
 
+def test_ai_stats_route_is_public_and_supports_difficulty_filter():
+    import inspect
+    from qwixx_ai.distributed import Handler
+
+    source = inspect.getsource(Handler.do_GET)
+    assert "self.path=='/api/ai-stats' or self.path.startswith('/api/ai-stats?')" in source
+    assert "self.coord.player_stats.ai_stats(query.get('difficulty',[None])[0])" in source
+
+
 def test_game_tabs_are_present_and_preserve_game_nodes():
     from qwixx_ai.web import HTML
 
-    for name in ("Play", "Account & Stats", "Training", "Rules & FAQ", "About"):
+    for name in ("Play", "Account & Stats", "Top 10", "AI Stats", "Training", "Rules & FAQ", "About"):
         assert name in HTML
     assert "Move Analysis" not in HTML.split("const sections=", 1)[1].split(";", 1)[0]
-    for node in ("status", "boards", "auth-login", "career", "training-dashboard", "gameplay-modal", "rules-faq", "about-qwixx"):
+    for node in ("status", "boards", "auth-login", "career", "training-dashboard", "gameplay-modal", "rules-faq", "about-qwixx", "section-ai-stats"):
         assert node in HTML
     assert "window.showTab=activate" in HTML
     assert "activate('play')" in HTML
     assert "panels.play.appendChild" in HTML
     assert "panels.rules.appendChild(rules)" in HTML
     assert "panels.about.appendChild(about)" in HTML
+    assert "if(id==='ai-stats'&&typeof showAiStats==='function')showAiStats();" in HTML
 
 
 def test_reset_endpoint_supports_optimal_first_roll():

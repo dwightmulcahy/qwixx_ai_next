@@ -78,6 +78,40 @@ def test_existing_results_are_migrated_and_places_backfilled(tmp_path):
     store.db.close()
 
 
+def test_ai_stats_are_derived_from_saved_score_arrays(tmp_path):
+    store = PlayerStats(tmp_path / "players.sqlite3")
+    player = store.create_profile("Human")
+    assert store.record("g1", player["id"], "champion", completed([100, 90, 80, 70]))
+    assert store.record("g2", player["id"], "champion", completed([50, 90, 80, 70]))
+    assert store.record("g3", player["id"], "champion", completed([50, 90, 90, 70]))
+
+    stats = store.ai_stats()
+    assert stats["games"] == 3
+    assert stats["difficulty"] == "all"
+    assert [p["name"] for p in stats["players"]] == [
+        "AI-Sir Rolls-a-Lot", "AI-Dicey McDiceface", "AI-Count von Qwixx"
+    ]
+    sir, dicey, count = stats["players"]
+    assert (sir["wins"], sir["ties"], sir["losses"]) == (1, 1, 1)
+    assert sir["win_rate"] == 33.3
+    assert sir["average_score"] == 90.0
+    assert sir["average_place"] == 1.33
+    assert sir["highest_score"] == 90
+    assert sir["lowest_score"] == 90
+    assert sir["longest_win_streak"] == 1
+    assert (dicey["wins"], dicey["ties"], dicey["losses"]) == (0, 1, 2)
+    assert dicey["average_place"] == 2.0
+    assert count["wins"] == 0
+    assert count["average_place"] == 3.33
+
+    empty = store.ai_stats("beginner")
+    assert empty["games"] == 0
+    assert all(p["games"] == 0 for p in empty["players"])
+    with pytest.raises(ValueError):
+        store.ai_stats("impossible")
+    store.db.close()
+
+
 def test_rejects_invalid_players_and_difficulties(tmp_path):
     store = PlayerStats(tmp_path / "players.sqlite3")
     with pytest.raises(ValueError):
