@@ -551,6 +551,24 @@ def test_locked_row_tooltips_identify_locking_players():
     assert 'title="'+ "'+escapeHtml(lockTooltip(colors[c]))+" in html
 
 
+def test_ai_stats_tab_uses_historical_scores_and_difficulty_filter():
+    html = html_source()
+    assert "['ai-stats','AI Stats']" in html
+    assert "async function showAiStats()" in html
+    assert "/api/ai-stats" in html
+    for expected in (
+        "AI Overall Statistics",
+        "All difficulties",
+        "Average place",
+        "Average score",
+        "Highest score",
+        "Lowest score",
+        "Longest win streak",
+        "Guest games are not recorded",
+    ):
+        assert expected in html, expected
+
+
 def test_leaderboard_cards_use_single_metric_and_podium_styling():
     html = html_source()
     leaderboard = html.split("async function showLeaderboard(){", 1)[1].split("function escapeHtml(value)", 1)[0]
