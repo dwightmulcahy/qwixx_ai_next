@@ -233,7 +233,10 @@ def test_live_rank_and_lock_ready_indicators():
     ):
         assert expected in html, expected
     assert "state.scores.filter(s=>s>score).length" in html
-    assert "row.length>=5&&!state.locks.includes" in html
+    assert "function lockReadyRows(board){if(state.done)return[]" in html
+    assert "readyToLock=!state.done&&!locked&&row.length>=5" in html
+    assert "locked?'locked':!state.done&&row.length>=5?'lock-ready'" in html
+    assert "!state.done&&!locked&&row.length>=5?' ready'" in html
 
 
 def test_first_visit_guest_or_registration_prompt():
@@ -420,12 +423,15 @@ assert.match(participants,/can also close this roll/);
 assert.match(participants,/AI-Dicey McDiceface/);
 vm.runInContext("cancelDecision()",context);
 
-vm.runInContext("state.done=true;render()",context);
+vm.runInContext("state.done=true;state.locks=['red','yellow','blue'];state.boards[0].rows[2]=[12,11,10,9,8];state.boards[1].rows[2]=[12,11,10,9,8,7,6,5];state.boards[2].rows[2]=[12,11,10,9,8,7,6,5,4];state.boards[3].rows[2]=[12,11,10,9,8,7];render()",context);
 const ended=el("boards").innerHTML;
 assert.match(ended,/Game complete/);
 assert.match(ended,/Final scores are shown below/);
 assert.doesNotMatch(ended,/onclick="confirmPhase\(\)"/);
 assert.doesNotMatch(ended,/onclick="skipPhase\(\)"/);
+assert.doesNotMatch(ended,/LOCK READY/);
+assert.doesNotMatch(ended,/lock-ready/);
+assert.doesNotMatch(ended,/lock-glyph ready/);
 """
     script = tmp_path / "ux_check.js"
     game = tmp_path / "game.js"
