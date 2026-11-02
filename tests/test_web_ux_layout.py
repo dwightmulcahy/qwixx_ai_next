@@ -118,6 +118,19 @@ def test_rules_tab_includes_bug_and_improvement_reporting():
     assert 'class="report-help"' in html
 
 
+def test_shop_tab_has_affiliate_products_and_disclosure():
+    html = html_source()
+    assert "['shop','SHOP']" in html
+    assert 'id="shop-qwixx"' in html
+    assert "As an Amazon Associate" in html
+    assert "at no extra cost to you" in html
+    assert "B00J57138C?tag=brewwatersolv-20" in html
+    assert "B099NT5LZS?tag=brewwatersolv-20" in html
+    assert "Shop Qwixx on Amazon" in html
+    assert "Shop scorecards on Amazon" in html
+    assert 'rel="noopener noreferrer sponsored"' in html
+
+
 def test_gameplay_preferences_are_in_a_dialog():
     html = html_source()
     for expected in (
