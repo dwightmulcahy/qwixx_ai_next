@@ -355,6 +355,18 @@ def main():
                     assert report_link.is_visible()
                     assert report_link.get_attribute("href") == "https://forms.gle/aW5nNFJWVfLQaX287"
 
+                    # Shop exposes the two Amazon affiliate products with disclosure.
+                    page.get_by_role("tab", name="SHOP", exact=True).click()
+                    shop_panel = page.locator("#section-shop")
+                    assert shop_panel.get_by_role("heading", name="SHOP", exact=True).is_visible()
+                    assert "As an Amazon Associate" in shop_panel.inner_text()
+                    game_link = shop_panel.get_by_role("link", name="Shop Qwixx on Amazon", exact=True)
+                    scorecards_link = shop_panel.get_by_role("link", name="Shop scorecards on Amazon", exact=True)
+                    assert "B00J57138C?tag=brewwatersolv-20" in game_link.get_attribute("href")
+                    assert "B099NT5LZS?tag=brewwatersolv-20" in scorecards_link.get_attribute("href")
+                    assert "sponsored" in game_link.get_attribute("rel")
+                    page.get_by_role("tab", name="Play", exact=True).click()
+
                     # About includes project context and clear contact paths.
                     page.get_by_role("tab", name="About", exact=True).click()
                     about_panel = page.locator("#section-about")

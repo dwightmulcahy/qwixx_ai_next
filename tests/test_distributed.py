@@ -345,15 +345,16 @@ def test_ai_stats_route_is_public_and_supports_difficulty_filter():
 def test_game_tabs_are_present_and_preserve_game_nodes():
     from qwixx_ai.web import HTML
 
-    for name in ("Play", "Account & Stats", "Top 10", "AI Stats", "Training", "Rules & FAQ", "About"):
+    for name in ("Play", "Account & Stats", "Top 10", "AI Stats", "SHOP", "Training", "Rules & FAQ", "About"):
         assert name in HTML
     assert "Move Analysis" not in HTML.split("const sections=", 1)[1].split(";", 1)[0]
-    for node in ("status", "boards", "auth-login", "career", "training-dashboard", "gameplay-modal", "rules-faq", "about-qwixx", "section-ai-stats"):
+    for node in ("status", "boards", "auth-login", "career", "training-dashboard", "gameplay-modal", "rules-faq", "shop-qwixx", "about-qwixx", "section-ai-stats"):
         assert node in HTML
     assert "window.showTab=activate" in HTML
     assert "activate('play')" in HTML
     assert "panels.play.appendChild" in HTML
     assert "panels.rules.appendChild(rules)" in HTML
+    assert "panels.shop.appendChild(shop)" in HTML
     assert "panels.about.appendChild(about)" in HTML
     assert "if(id==='ai-stats'&&typeof showAiStats==='function')showAiStats();" in HTML
 
