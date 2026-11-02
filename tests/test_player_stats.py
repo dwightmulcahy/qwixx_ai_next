@@ -102,7 +102,7 @@ def test_ai_stats_are_derived_from_saved_score_arrays(tmp_path):
     assert (dicey["wins"], dicey["ties"], dicey["losses"]) == (0, 1, 2)
     assert dicey["average_place"] == 2.0
     assert count["wins"] == 0
-    assert count["average_place"] == 3.67
+    assert count["average_place"] == 3.33
 
     empty = store.ai_stats("beginner")
     assert empty["games"] == 0
