@@ -120,6 +120,11 @@ html[data-theme="light"] .career-stat{background:var(--cell)}
 .game-events{display:flex;flex-wrap:nowrap;align-items:center;gap:5px;margin:3px 0 0;font-size:11px;min-height:17px;max-height:17px;overflow:hidden}
 .game-event{padding:3px 8px;border-radius:6px;background:#164e63;color:#ecfeff}
 .game-event.strike{background:#78350f;color:#fef3c7}
+.mini-strikes{display:inline-flex;align-items:center;gap:5px}
+.mini-penalties{display:inline-flex;gap:3px}
+.mini-penalty-box{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border:1px solid #94a3b8;border-radius:4px;background:#0f172a;color:#fecaca;font-size:11px;font-weight:950;line-height:1}
+.mini-penalty-box.used{background:#450a0a;border-color:#ef4444}
+.mini-penalty-box.recent-strike{outline:2px solid #fbbf24;outline-offset:1px;box-shadow:0 0 10px #f59e0b88}
 .game-event.lock{background:#365314;color:#f7fee7}
 .next-roller{font-size:12px;color:var(--muted);margin-left:8px}
 @media(prefers-reduced-motion:reduce){.mini-number.recent-mark,.number-cell.recent-mark{transition:none}}
@@ -223,7 +228,7 @@ function recordMoveChanges(previous,next){
    row.filter(n=>!before.includes(n)).forEach(n=>events.push({player:i,color:c,number:n,type:'mark',label:playerNames[i]+' marked '+names[c]+' '+n}));
   });
   const strikes=board.penalties-(previous.boards[i]?.penalties||0);
-  if(strikes>0)events.push({player:i,type:'strike',label:playerNames[i]+' received '+strikes+' strike'+(strikes>1?'s':'')});
+  if(strikes>0)events.push({player:i,type:'strike',label:'❌ '+playerNames[i]+' takes '+(strikes===1?'a strike':strikes+' strikes')+' · −'+(strikes*5)});
  });
  (next.locks||[]).filter(color=>!(previous.locks||[]).includes(color)).forEach(color=>events.push({type:'lock',color:colors.indexOf(color),label:names[colors.indexOf(color)]+' row locked'}));
  recentChanges=events;
@@ -304,9 +309,10 @@ let moving=false;function showNewPenalties(previous,next){
  if(penaltySession&&state?.session_id&&penaltySession!==state.session_id)return;
  const changes=next.boards.flatMap((board,i)=>{
   const before=previous.boards[i]?.penalties||0;
-  return board.penalties>before?[{name:dialogPlayerName(i),count:board.penalties-before}]:[];
+  return board.penalties>before?[{player:i,name:dialogPlayerName(i),count:board.penalties-before}]:[];
  });
- if(!changes.length)return;
+ const humanChanges=changes.filter(change=>change.player===0);
+ if(!humanChanges.length)return;
  clearPenaltyModal();
  const overlay=document.createElement('div');
  overlay.id='penalty-modal';overlay.className='game-over-overlay';
@@ -314,7 +320,7 @@ let moving=false;function showNewPenalties(previous,next){
  const dialog=document.createElement('div');dialog.className='game-over-dialog';
  const title=document.createElement('h2');title.textContent='❌ Penalty!';
  dialog.appendChild(title);
- for(const change of changes){
+ for(const change of humanChanges){
   const message=document.createElement('p');
   message.textContent=change.name+' received '+change.count+' X'+(change.count===1?'':'s')+' (−'+(change.count*5)+' points).';
   dialog.appendChild(message);
@@ -373,7 +379,8 @@ function miniCard(board,i){
   b+=nums.map((n,j)=>'<span class="mini-number'+(row.includes(n)?' marked':(locked||j<last)?' skipped':'')+(recentMark(i,c,n)?' recent-mark':'')+'" aria-label="'+names[c]+' '+n+(row.includes(n)?' marked':(locked||j<last)?' skipped':' available')+'">'+n+'</span>').join('');
   b+='<span class="mini-lock'+(readyToLock?' lock-ready':'')+'" title="'+(readyToLock?'Can lock '+names[c]+' row · '+row.length+' marks':'')+'" aria-label="'+names[c]+(locked?' locked':readyToLock?' lock ready':' unlocked')+'">'+(locked?'🔒':readyToLock?'🔓':'')+'</span>'+(locked?'<span class="mini-locked-label" title="'+escapeHtml(lockTooltip(colors[c]))+'" aria-label="'+escapeHtml(lockTooltip(colors[c]))+'">🔒 LOCKED</span>':'')+'</div>';
  });
- return b+'<div class="mini-footer"><span>Strikes: '+board.penalties+' / 4</span><span>Position: '+playerRank(i).label+'</span></div></section>';
+ const recentStrike=recentChanges.some(e=>e.type==='strike'&&e.player===i);
+ return b+'<div class="mini-footer"><span class="mini-strikes"><span>Strikes:</span><span class="mini-penalties" aria-label="'+board.penalties+' of 4 strikes">'+Array.from({length:4},(_,j)=>'<span class="mini-penalty-box '+(j<board.penalties?'used':'')+(recentStrike&&j===board.penalties-1?' recent-strike':'')+'" aria-hidden="true">'+(j<board.penalties?'✕':'')+'</span>').join('')+'</span></span><span>Position: '+playerRank(i).label+'</span></div></section>';
 }
 function closeGameOver(){document.getElementById('game-over-modal')?.remove()}
 function showGameOver(){if(gameOverShown||!state.done)return;clearPenaltyModal();gameOverShown=true;const rankings=state.scores.map((score,i)=>({name:dialogPlayerName(i),score})).sort((a,b)=>b.score-a.score),top=rankings[0].score,winners=rankings.filter(p=>p.score===top),result=winners.length===1?escapeHtml(winners[0].name)+' wins!':winners.map(p=>escapeHtml(p.name)).join(' and ')+' tie for 1st!';const overlay=document.createElement('div');overlay.id='game-over-modal';overlay.className='game-over-overlay';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Game over');overlay.innerHTML='<div class="game-over-dialog"><h2>🏁 Game over!</h2><p><strong>'+result+'</strong></p><p>'+rankings.map(p=>escapeHtml(p.name)+': '+p.score).join('<br>')+'</p><button onclick="openNewGameDialog()">Play again</button><button onclick="closeGameOver()">View final scorecards</button></div>';document.body.appendChild(overlay)}
