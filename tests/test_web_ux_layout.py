@@ -281,7 +281,7 @@ def test_game_ending_lock_warning_accounts_for_remaining_white_decisions():
         "state.phase>=n-1",
         "remainingWhiteCanChange(action)",
         "projectedLockMaxScores(action,scores)",
-        "The table shows each player\\'s highest possible final score.",
+        "The table shows the highest possible final score for each player.",
         "No remaining player has a legal white-dice mark, so these scores are final.",
     ):
         assert expected in html, expected
