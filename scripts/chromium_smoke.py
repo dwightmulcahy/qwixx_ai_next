@@ -400,6 +400,7 @@ def main():
                     )
                     ai_stats = page.locator("#section-ai-stats")
                     ai_stats.get_by_role("heading", name="🤖 AI Overall Statistics", exact=True).wait_for(state="visible", timeout=5000)
+                    ai_stats.locator(".ai-stat-card").nth(2).wait_for(state="visible", timeout=5000)
                     assert ai_stats.locator(".ai-stat-card").count() == 3
                     assert ai_stats.get_by_text("AI-Sir Rolls-a-Lot", exact=True).is_visible()
                     assert ai_stats.get_by_text("165 tracked games in this view", exact=True).is_visible()
