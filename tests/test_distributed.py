@@ -466,7 +466,8 @@ def test_lock_confirmation_warns_when_second_lock_would_end_game():
         "secondLock=newDistinct&&state.locks.length===1",
         "This is the second locked row and will end the game.",
         "Projected final scores",
-        "scores can still change",
+        "Possible final scores",
+        "highest possible final score for each player",
     ):
         assert expected in HTML, expected
     assert "window.confirm('Close this row?" not in HTML
