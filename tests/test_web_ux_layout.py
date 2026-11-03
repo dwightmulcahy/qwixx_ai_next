@@ -242,8 +242,10 @@ def test_penalty_pass_and_lock_use_styled_confirmation_dialogs():
         "function shouldConfirmPenaltyPass()", "state.legal.length>0",
         "Take a missed-throw penalty?", "Pass anyway (−5)",
         "function confirmLockAction(action)", "Lock the '+names[action[0]]+' row?",
-        "function projectedLockScores(action)", "function remainingWhiteCanChange(action)",
-        "Projected final scores", "second locked row", "would finish",
+        "function projectedLockScores(action)", "function projectedLockMaxScores(action,scores=projectedLockScores(action))",
+        "function projectedBoardScore(board,i,action,extraMark=null)", "function scoreCeilingOutcome(scores,maxScores,i)",
+        "function remainingWhiteCanChange(action)", "Possible final scores", "Projected final scores",
+        "second locked row", "would finish", "highest possible final score",
     ):
         assert expected in html, expected
     assert "window.confirm('Close this row?" not in html
@@ -278,7 +280,8 @@ def test_game_ending_lock_warning_accounts_for_remaining_white_decisions():
         "secondLock=newDistinct&&state.locks.length===1",
         "state.phase>=n-1",
         "remainingWhiteCanChange(action)",
-        "Remaining players can still change the scores.",
+        "projectedLockMaxScores(action,scores)",
+        "The table shows the highest possible final score for each player.",
         "No remaining player has a legal white-dice mark, so these scores are final.",
     ):
         assert expected in html, expected
@@ -509,8 +512,12 @@ vm.runInContext("cancelDecision()",context);
 // During an earlier white-dice decision, remaining players may still change the final scores.
 vm.runInContext("state.phase=0;state.actor=0;state.roller=0;state.dice=[6,6,1,1,1,1];state.locks=['red'];state.white_locks=[];state.legal=[[1,12,true]];state.boards[1].rows[1]=[2,3,4,5,6];pending=[1,12,true];confirmPhase()",context);
 assert.equal(el("decision-modal").hidden,false);
-assert.match(el("decision-body").innerHTML,/scores can still change/);
-assert.doesNotMatch(el("decision-body").innerHTML,/Projected final scores/);
+const ceilingBody=el("decision-body").innerHTML;
+assert.match(ceilingBody,/highest possible final score/);
+assert.match(ceilingBody,/Possible final scores/);
+assert.match(ceilingBody,/→ \d+ max/);
+assert.match(ceilingBody,/can still (take|tie) 1st|1st clinched|at least T-1st|out of 1st/);
+assert.doesNotMatch(ceilingBody,/Projected final scores/);
 vm.runInContext("cancelDecision()",context);
 
 // Same-roll lock dialog identifies everyone who already closed or can still close the row.
