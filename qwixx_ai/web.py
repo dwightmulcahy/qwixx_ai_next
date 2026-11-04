@@ -523,8 +523,7 @@ def new_play_game(optimal_first_roll=False):
 class Session:
     def __init__(self,model=None,difficulty='champion'):
         if difficulty not in ('beginner','intermediate','advanced','champion'):raise ValueError('Invalid difficulty')
-        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=new_play_game();self.history=[];self.step1_snapshot=None;self.thinking_actor=None
-        self.advance()
+        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game();self.history=[];self.step1_snapshot=None;self.thinking_actor=None
     def reset_game(self,optimal_first_roll=False):
         if type(optimal_first_roll) is not bool:raise ValueError('optimal_first_roll must be boolean')
         self.game=new_play_game(optimal_first_roll)
