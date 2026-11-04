@@ -187,7 +187,8 @@ def test_new_game_dialog_offers_optimal_first_roll():
     for expected in (
         'id="new-game-button"', 'onclick="openNewGameDialog()"',
         'id="new-game-modal"', "Start a new game?", "Random first roll",
-        "Find optimal first roll", "function openNewGameDialog()",
+        "Find optimal first roll", "The first roller is chosen randomly.",
+        "randomly selected starting player", "function openNewGameDialog()",
         "function startNewGame(optimalFirstRoll)",
         "optimal_first_roll:!!optimalFirstRoll",
         'id="finding-roll-modal"', "Finding optimal first roll…",
