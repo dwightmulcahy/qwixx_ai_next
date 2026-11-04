@@ -30,11 +30,25 @@ def test_optimal_opening_roll_supports_two_edge_marks():
     from qwixx_ai.web import opening_supports_two_edge_marks, optimal_opening_game
 
     good=Game(seed=1);good.dice=(1,1,2,2,2,2)
+    good.active=2
     bad=Game(seed=1);bad.dice=(3,4,3,3,3,3)
     assert opening_supports_two_edge_marks(good)
     assert not opening_supports_two_edge_marks(bad)
     found=optimal_opening_game()
     assert opening_supports_two_edge_marks(found)
+
+
+def test_play_session_randomizes_first_roller_without_changing_core_game_default():
+    from qwixx_ai.core import Game
+    from qwixx_ai.web import randomize_starting_player
+
+    assert Game(seed=1).active==0
+    starters=set()
+    for seed in range(64):
+        game=randomize_starting_player(Game(seed=seed))
+        assert 0<=game.active<game.n
+        starters.add(game.active)
+    assert starters=={0,1,2,3}
 
 
 def test_independent_sessions(tmp_path,monkeypatch):
