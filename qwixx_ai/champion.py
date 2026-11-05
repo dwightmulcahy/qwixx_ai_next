@@ -15,7 +15,16 @@ def phase91_champion(game):
     return _search(game) if game.n == 4 else heuristic_v2(game)
 
 
-def champion(game):
-    """Promoted frozen row-change-only hybrid for four-player games."""
+def base_champion(game):
+    """Frozen pre-Phase-12 champion used as the adaptive-search incumbent."""
     incumbent = phase91_champion(game)
     return row_change_only(game, incumbent) if game.n == 4 else incumbent
+
+
+def champion(game):
+    """Phase 12 champion: conservative adaptive search around the frozen base."""
+    incumbent=base_champion(game)
+    if game.n!=4:
+        return incumbent
+    from .search_adaptive import select
+    return select(game,incumbent_policy=base_champion)
