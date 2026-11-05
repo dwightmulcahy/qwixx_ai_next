@@ -12,6 +12,7 @@ from .model import (network,choose,save,load,export_policy,model_architecture,
                     model_input_size,DUELING_ARCH)
 from .agents import heuristic,random_agent
 from .heuristic_v2 import heuristic_v2
+from .rollout_policy import rollout_policy
 from .tournament import evaluate
 from .web import HTML as GAME_HTML, Session
 from .favicon import FAVICON_SVG
@@ -51,7 +52,7 @@ class Coordinator:
         self.games=0;self.browser_games=0;self.central_games=0;self.updates=0
         self.best=-1.;self.version=0;self.last_loss=None;self.last_eval=None
         self.player_stats=PlayerStats(ROOT/'players.sqlite3')
-        self.sessions={};self.promoted_at=None;self.best_model=None;self.league=deque(maxlen=6)
+        self.sessions={};self.promoted_at=None;self.best_model=None;self.league=deque(maxlen=12)
         self.obs_size=len(observe(Game()))
         self.model=network(self.obs_size);self.target=network(self.obs_size)
         checkpoint=ROOT/'latest.pt'
@@ -73,6 +74,7 @@ class Coordinator:
                     raise ValueError('Legacy champion observation/architecture')
                 self.best_model=candidate
                 self.best=float(torch.load(best_path,map_location='cpu',weights_only=True).get('win_share',-1))
+                self.league.append(copy.deepcopy(candidate).eval())
             except Exception as exc:print('Best checkpoint load failed:',exc,flush=True)
         self.optimizer=torch.optim.Adam(self.model.parameters(),lr=3e-4)
         state_path=ROOT/'trainer.pt'
@@ -133,9 +135,39 @@ class Coordinator:
             self._add_transitions(transitions);self.games+=1;self.browser_games+=1
             self._record('browser',scores,moves,seed)
         return {'accepted':True,'scores':scores,'transitions':len(transitions)}
+    def _sample_training_opponent(self):
+        """Sample one stable opponent identity for a full self-play game."""
+        roll=self.rng.random()
+        if self.best_model is not None and roll<0.40:
+            return ('best',self.best_model)
+        if self.league and roll<0.75:
+            return ('league',self.rng.choice(list(self.league)))
+        if roll<0.95:
+            return ('rollout',None)
+        return ('heuristic',None)
+
+    def _training_roster(self):
+        """Assign one policy per seat and rotate the learner seat uniformly."""
+        learner=self.rng.randrange(4)
+        roster=[self._sample_training_opponent() for _ in range(4)]
+        roster[learner]=('current',self.model)
+        return roster
+
+    def _training_action(self,spec,game):
+        kind,policy=spec
+        if kind=='current':
+            return choose(policy,game,epsilon=self.exploration())
+        if kind in ('best','league'):
+            return choose(policy,game,epsilon=0.04)
+        if kind=='rollout':
+            return rollout_policy(game)
+        return heuristic_v2(game)
+
     def central_rollout(self):
         seed=self.rng.randrange(2**31)
         g=Game(seed=seed);last=[None]*4;transitions=[];moves=[]
+        with self.lock:
+            roster=self._training_roster()
         while not g.done:
             who=g.actor
             if last[who] is not None:
@@ -143,8 +175,7 @@ class Coordinator:
                 reward=shaped_reward((g.scores()[who]-start)/25,p0,potential(g,who),False)
                 transitions.append((s,a,reward,observe(g),False,mask(g)))
             with self.lock:
-                policy=self.rng.choice(list(self.league)) if self.league and self.rng.random()<.15 else (self.best_model if self.best_model is not None and self.rng.random()<.35 else self.model)
-                a=choose(policy,g,epsilon=self.exploration()) if self.rng.random()<.65 else (heuristic_v2(g) if self.rng.random()<.65 else (heuristic(g) if self.rng.random()<.8 else random_agent(g)))
+                a=self._training_action(roster[who],g)
             last[who]=(observe(g).copy(),encode(a),g.scores()[who],potential(g,who));moves.append(encode(a));g.step(a)
         scores=g.scores()
         for who,item in enumerate(last):
@@ -226,7 +257,8 @@ class Coordinator:
             result['champion_win_share']=champion_eval['win_share'] if champion_eval else None
             if champion_eval is None or result['win_share']>champion_eval['win_share']+0.03:
                 candidate=ROOT/'candidate.pt';save(self.model,candidate,updates=self.updates,games=self.games,win_share=result['win_share']);candidate.replace(ROOT/'best.pt')
-                self.best=result['win_share'];self.best_model=copy.deepcopy(self.model).eval();self.league.append(copy.deepcopy(self.best_model));self.promoted_at=time.time()
+                if self.best_model is not None:self.league.append(copy.deepcopy(self.best_model).eval())
+                self.best=result['win_share'];self.best_model=copy.deepcopy(self.model).eval();self.promoted_at=time.time()
             with self.log.open('a') as f:f.write(json.dumps({'time':time.time(),**self.stats()})+'\n')
     def new_session(self,difficulty='champion',player_id=None,optimal_first_roll=False,randomize_seating=True):
         with self.lock:
