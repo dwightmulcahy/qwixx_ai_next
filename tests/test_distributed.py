@@ -81,9 +81,11 @@ def test_independent_sessions(tmp_path,monkeypatch):
 
 def test_policy_export_shape():
     c=Coordinator();p=c.policy_export()
-    assert len(p['layers'])==3
-    assert len(p['layers'][0]['w'][0])==p['observation_size']
-    assert len(p['layers'][-1]['b'])==89
+    assert p['architecture']=='dueling-v1'
+    assert len(p['trunk'])==3
+    assert len(p['trunk'][0]['w'][0])==p['observation_size']
+    assert len(p['value']['b'])==1
+    assert len(p['advantage']['b'])==89
 
 
 def test_browser_worker_uses_web_worker_messages():
@@ -297,9 +299,9 @@ def test_admin_endpoint_requires_token(tmp_path,monkeypatch):
 def test_legacy_checkpoint_starts_fresh_without_deleting_files(tmp_path, monkeypatch):
     import torch
     from qwixx_ai import distributed
-    from qwixx_ai.model import network
+    from qwixx_ai.model import legacy_network
     monkeypatch.setattr(distributed, 'ROOT', tmp_path)
-    old = network(195)
+    old = legacy_network(195)
     torch.save({'model': old.state_dict(), 'obs_size': 195}, tmp_path / 'latest.pt')
     torch.save({'model': old.state_dict(), 'obs_size': 195, 'win_share': 0.8}, tmp_path / 'best.pt')
     coordinator = distributed.Coordinator()
@@ -308,6 +310,22 @@ def test_legacy_checkpoint_starts_fresh_without_deleting_files(tmp_path, monkeyp
     assert coordinator.best_model is None
     assert (tmp_path / 'latest.pt').exists()
     assert (tmp_path / 'best.pt').exists()
+    coordinator.db.close()
+
+
+def test_same_size_legacy_policy_is_rejected_for_live_training(tmp_path,monkeypatch):
+    import torch
+    from qwixx_ai import distributed
+    from qwixx_ai.env import observe
+    from qwixx_ai.core import Game
+    from qwixx_ai.model import legacy_network
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    size=len(observe(Game()))
+    old=legacy_network(size)
+    torch.save({'model':old.state_dict(),'obs_size':size},tmp_path/'latest.pt')
+    coordinator=distributed.Coordinator()
+    assert coordinator.model.architecture=='dueling-v1'
+    assert coordinator.model is not old
     coordinator.db.close()
 
 
