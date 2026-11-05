@@ -2,7 +2,7 @@
 
 The search uses a fixed, state-derived set of future RNG seeds shared across
 candidate actions. The focal player alone searches; simulated continuations
-use V2 for every seat. This is a search policy, not a trained checkpoint.
+use a frozen non-recursive hybrid rollout policy for every seat. This is a search policy, not a trained checkpoint.
 """
 import argparse
 import hashlib
@@ -11,6 +11,7 @@ import random
 
 from .controlled_strategy import paired_compare
 from .heuristic_v2 import heuristic_v2
+from .rollout_policy import rollout_policy
 
 
 def state_seed(game, seed):
@@ -34,7 +35,7 @@ def outcome(game, action, future_seed):
     trial.rng = random.Random(future_seed)
     trial.step(action)
     while not trial.done:
-        trial.step(heuristic_v2(trial))
+        trial.step(rollout_policy(trial))
     scores = trial.scores()
     best = max(scores)
     share = (1 / sum(score == best for score in scores)
