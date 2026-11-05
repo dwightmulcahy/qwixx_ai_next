@@ -72,7 +72,7 @@ def test_independent_sessions(tmp_path,monkeypatch):
     c=Coordinator()
     first=c.new_session();second=c.new_session()
     assert first['session_id']!=second['session_id']
-    optimal=c.new_session(optimal_first_roll=True)
+    optimal=c.new_session(optimal_first_roll=True,randomize_seating=False)
     assert opening_supports_two_edge_marks(c.sessions[optimal['session_id']][0].game)
     first_after=c.session_action(first['session_id'],None)
     assert first_after['session_id']==first['session_id']
