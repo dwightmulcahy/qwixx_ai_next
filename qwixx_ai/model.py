@@ -31,8 +31,10 @@ class DuelingQNetwork(nn.Module):
         return value+advantage-advantage.mean(dim=-1,keepdim=True)
 
     def __getitem__(self,index):
-        # Compatibility for older code/tests that inspect model[0].in_features.
+        # Compatibility for older research tooling that inspected the first
+        # input layer or perturbed the final action-output layer.
         if index==0:return self.trunk[0]
+        if index==-1:return self.advantage
         raise IndexError(index)
 
 
@@ -97,7 +99,11 @@ def save(model,path,**meta):
 
 def load(path):
     checkpoint=torch.load(path,map_location="cpu",weights_only=True)
-    architecture=checkpoint.get("architecture",LEGACY_ARCH)
+    architecture=checkpoint.get("architecture")
+    if architecture is None:
+        keys=checkpoint["model"].keys()
+        architecture=(DUELING_ARCH if any(key.startswith("trunk.") or key.startswith("advantage.") for key in keys)
+                      else LEGACY_ARCH)
     if architecture==DUELING_ARCH:
         model=network(checkpoint["obs_size"])
     elif architecture==LEGACY_ARCH:
