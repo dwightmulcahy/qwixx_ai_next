@@ -322,7 +322,8 @@ def main():
                         }"""
                     )
                     game_over.wait_for(state="visible", timeout=5000)
-                    assert "dWiGhT and AI-Sir Rolls-a-Lot tie for 1st!" in game_over.inner_text()
+                    second_player = page.evaluate("playerNames[1]")
+                    assert f"dWiGhT and {second_player} tie for 1st!" in game_over.inner_text()
                     game_over.get_by_role("button", name="View final scorecards").click()
 
                     # Guest mode intentionally hides the authenticated identity.
