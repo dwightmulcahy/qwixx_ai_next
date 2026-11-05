@@ -30,6 +30,7 @@ def test_optimal_opening_roll_supports_two_edge_marks():
     from qwixx_ai.web import opening_supports_two_edge_marks, optimal_opening_game
 
     good=Game(seed=1);good.dice=(1,1,2,2,2,2)
+    good.active=2
     bad=Game(seed=1);bad.dice=(3,4,3,3,3,3)
     assert opening_supports_two_edge_marks(good)
     assert not opening_supports_two_edge_marks(bad)
@@ -37,12 +38,41 @@ def test_optimal_opening_roll_supports_two_edge_marks():
     assert opening_supports_two_edge_marks(found)
 
 
+def test_play_session_randomizes_first_roller_without_changing_core_game_default():
+    from qwixx_ai.core import Game
+    from qwixx_ai.web import randomize_starting_player
+
+    assert Game(seed=1).active==0
+    starters=set()
+    for seed in range(64):
+        game=randomize_starting_player(Game(seed=seed))
+        assert 0<=game.active<game.n
+        starters.add(game.active)
+    assert starters=={0,1,2,3}
+
+
+def test_session_random_seating_shuffles_ai_identities_and_can_be_disabled():
+    from qwixx_ai.web import AI_NAMES, Session
+
+    session=Session()
+    session.reset_game(randomize_seating=False)
+    assert session.game.active==0
+    assert session.ai_names==list(AI_NAMES)
+
+    seen=set()
+    for _ in range(40):
+        session.reset_game(randomize_seating=True)
+        assert sorted(session.ai_names)==sorted(AI_NAMES)
+        seen.add(tuple(session.ai_names))
+    assert len(seen)>1
+
+
 def test_independent_sessions(tmp_path,monkeypatch):
     from qwixx_ai.web import opening_supports_two_edge_marks
     c=Coordinator()
     first=c.new_session();second=c.new_session()
     assert first['session_id']!=second['session_id']
-    optimal=c.new_session(optimal_first_roll=True)
+    optimal=c.new_session(optimal_first_roll=True,randomize_seating=False)
     assert opening_supports_two_edge_marks(c.sessions[optimal['session_id']][0].game)
     first_after=c.session_action(first['session_id'],None)
     assert first_after['session_id']==first['session_id']
@@ -366,9 +396,11 @@ def test_reset_endpoint_supports_optimal_first_roll():
     handler=inspect.getsource(Handler.do_POST)
     coordinator=inspect.getsource(Coordinator.new_session)
     assert "optimal=data.get('optimal_first_roll',False)" in handler
+    assert "randomize=data.get('randomize_seating',True)" in handler
     assert "if type(optimal) is not bool:raise ValueError('optimal_first_roll must be boolean')" in handler
-    assert "optimal_first_roll=False" in coordinator
-    assert "session.reset_game(optimal_first_roll)" in coordinator
+    assert "if type(randomize) is not bool:raise ValueError('randomize_seating must be boolean')" in handler
+    assert "optimal_first_roll=False,randomize_seating=True" in coordinator
+    assert "session.reset_game(optimal_first_roll,randomize_seating)" in coordinator
 
 
 def test_guest_mode_overrides_registered_cookie_without_logging_out():

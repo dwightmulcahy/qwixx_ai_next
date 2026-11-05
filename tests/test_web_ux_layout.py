@@ -187,7 +187,8 @@ def test_new_game_dialog_offers_optimal_first_roll():
     for expected in (
         'id="new-game-button"', 'onclick="openNewGameDialog()"',
         'id="new-game-modal"', "Start a new game?", "Random first roll",
-        "Find optimal first roll", "function openNewGameDialog()",
+        "Find optimal first roll", "Randomize seating", "selected starting player",
+        "function openNewGameDialog()",
         "function startNewGame(optimalFirstRoll)",
         "optimal_first_roll:!!optimalFirstRoll",
         'id="finding-roll-modal"', "Finding optimal first roll…",
@@ -196,6 +197,19 @@ def test_new_game_dialog_offers_optimal_first_roll():
         "function optimalNewGameEnabled()",
         "if(optimalNewGameEnabled()){void startNewGame(true);return}",
         '<button onclick="openNewGameDialog()">Play again</button>',
+    ):
+        assert expected in html, expected
+
+
+def test_random_seating_gameplay_preference_defaults_on():
+    html = html_source()
+    for expected in (
+        "RANDOM_SEATING_KEY='qwixx-random-seating'",
+        'id="pref-random-seating"',
+        "preference(RANDOM_SEATING_KEY,'on')==='on'",
+        "randomize_seating:preference(RANDOM_SEATING_KEY,'on')==='on'",
+        "function syncPlayerNames()",
+        "state.ai_names",
     ):
         assert expected in html, expected
 

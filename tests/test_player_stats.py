@@ -73,6 +73,7 @@ def test_existing_results_are_migrated_and_places_backfilled(tmp_path):
     store = PlayerStats(path)
     columns = {row[1] for row in store.db.execute("PRAGMA table_info(results)")}
     assert "place" in columns
+    assert "ai_names" in columns
     assert store.db.execute("SELECT place FROM results ORDER BY created").fetchall() == [(2,), (1,)]
     assert store.stats("p1")["average_place"] == 1.5
     store.db.close()
@@ -109,6 +110,21 @@ def test_ai_stats_are_derived_from_saved_score_arrays(tmp_path):
     assert all(p["games"] == 0 for p in empty["players"])
     with pytest.raises(ValueError):
         store.ai_stats("impossible")
+    store.db.close()
+
+
+def test_ai_stats_follow_ai_identity_after_seat_shuffle(tmp_path):
+    store = PlayerStats(tmp_path / "players.sqlite3")
+    player = store.create_profile("Human")
+    shuffled = ["AI-Count von Qwixx", "AI-Sir Rolls-a-Lot", "AI-Dicey McDiceface"]
+    assert store.record("shuffle", player["id"], "champion", completed([40, 90, 80, 70]), shuffled)
+
+    stats = {p["name"]: p for p in store.ai_stats()["players"]}
+    assert stats["AI-Count von Qwixx"]["average_score"] == 90.0
+    assert stats["AI-Sir Rolls-a-Lot"]["average_score"] == 80.0
+    assert stats["AI-Dicey McDiceface"]["average_score"] == 70.0
+    with pytest.raises(ValueError, match="Invalid AI seating"):
+        store.record("bad", player["id"], "champion", completed([40, 90, 80, 70]), ["A", "B", "C"])
     store.db.close()
 
 

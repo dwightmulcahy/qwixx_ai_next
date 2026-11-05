@@ -21,7 +21,7 @@ class PlayerStats:
         self.db.execute("""CREATE TABLE IF NOT EXISTS results (
             session_id TEXT PRIMARY KEY, player_id TEXT NOT NULL, difficulty TEXT NOT NULL,
             score INTEGER NOT NULL, penalties INTEGER NOT NULL, turns INTEGER NOT NULL,
-            scores TEXT NOT NULL, result TEXT NOT NULL, place INTEGER NOT NULL, created REAL NOT NULL,
+            scores TEXT NOT NULL, ai_names TEXT, result TEXT NOT NULL, place INTEGER NOT NULL, created REAL NOT NULL,
             FOREIGN KEY(player_id) REFERENCES players(id))""")
         self.db.execute("CREATE TABLE IF NOT EXISTS auth_codes (email TEXT PRIMARY KEY, digest TEXT NOT NULL, expires REAL NOT NULL, attempts INTEGER NOT NULL, sent REAL NOT NULL, name TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS auth_sessions (token_hash TEXT PRIMARY KEY, player_id TEXT NOT NULL, expires REAL NOT NULL)")
@@ -29,6 +29,7 @@ class PlayerStats:
         if "email" not in columns:self.db.execute("ALTER TABLE players ADD COLUMN email TEXT")
         result_columns={r[1] for r in self.db.execute("PRAGMA table_info(results)")}
         if "place" not in result_columns:self.db.execute("ALTER TABLE results ADD COLUMN place INTEGER")
+        if "ai_names" not in result_columns:self.db.execute("ALTER TABLE results ADD COLUMN ai_names TEXT")
         for session_id,scores_json in self.db.execute("SELECT session_id,scores FROM results WHERE place IS NULL").fetchall():
             try:
                 scores=json.loads(scores_json)
@@ -149,7 +150,7 @@ class PlayerStats:
                 raise ValueError("Unknown player profile")
             return {"id": row[0], "name": row[1]}
 
-    def record(self, session_id, player_id, difficulty, game):
+    def record(self, session_id, player_id, difficulty, game, ai_names=None):
         if not game.done:
             return False
         self.profile(player_id)
@@ -157,11 +158,15 @@ class PlayerStats:
         highest = max(scores)
         place = 1 + sum(score > scores[0] for score in scores[1:])
         result = "tie" if scores[0] == highest and scores.count(highest) > 1 else ("win" if scores[0] == highest else "loss")
+        canonical = ["AI-Sir Rolls-a-Lot", "AI-Dicey McDiceface", "AI-Count von Qwixx"]
+        names = list(ai_names) if ai_names is not None else canonical
+        if sorted(names) != sorted(canonical):
+            raise ValueError("Invalid AI seating")
         with self.lock:
             cursor = self.db.execute(
-                "INSERT OR IGNORE INTO results (session_id,player_id,difficulty,score,penalties,turns,scores,result,place,created) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO results (session_id,player_id,difficulty,score,penalties,turns,scores,ai_names,result,place,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (session_id, player_id, difficulty, scores[0], game.boards[0].penalties,
-                 game.turn + 1, json.dumps(scores), result, place, time.time()))
+                 game.turn + 1, json.dumps(scores), json.dumps(names), result, place, time.time()))
             self.db.commit()
             return cursor.rowcount == 1
 
@@ -208,34 +213,38 @@ class PlayerStats:
         }
 
     def ai_stats(self, difficulty=None):
-        """Aggregate historical performance for the three fixed AI seats."""
+        """Aggregate historical performance by AI identity, independent of seat."""
         if difficulty is not None and difficulty not in ("beginner", "intermediate", "advanced", "champion"):
             raise ValueError("Invalid difficulty")
         condition = "WHERE difficulty=?" if difficulty else ""
         params = (difficulty,) if difficulty else ()
         with self.lock:
             rows = self.db.execute(
-                "SELECT scores,created FROM results " + condition + " ORDER BY created ASC,rowid ASC",
+                "SELECT scores,ai_names,created FROM results " + condition + " ORDER BY created ASC,rowid ASC",
                 params,
             ).fetchall()
         names = ("AI-Sir Rolls-a-Lot", "AI-Dicey McDiceface", "AI-Count von Qwixx")
-        accum = [
-            dict(name=name, games=0, wins=0, losses=0, ties=0, total_score=0,
-                 highest_score=None, lowest_score=None, total_place=0,
-                 current_win_streak=0, longest_win_streak=0)
+        accum = {
+            name: dict(name=name, games=0, wins=0, losses=0, ties=0, total_score=0,
+                       highest_score=None, lowest_score=None, total_place=0,
+                       current_win_streak=0, longest_win_streak=0)
             for name in names
-        ]
+        }
         valid_games = 0
-        for scores_json, _created in rows:
+        for scores_json, ai_names_json, _created in rows:
             try:
                 scores = json.loads(scores_json)
+                seated = json.loads(ai_names_json) if ai_names_json else list(names)
             except (TypeError, json.JSONDecodeError):
                 continue
             if not isinstance(scores, list) or len(scores) < 4:
                 continue
+            if not isinstance(seated, list) or sorted(seated) != sorted(names):
+                seated = list(names)
             valid_games += 1
             highest = max(scores)
-            for seat, stat in enumerate(accum, start=1):
+            for seat, name in enumerate(seated, start=1):
+                stat = accum[name]
                 score = scores[seat]
                 place = 1 + sum(other > score for other in scores)
                 tied_first = score == highest and scores.count(highest) > 1
@@ -251,7 +260,8 @@ class PlayerStats:
                 stat["current_win_streak"] = stat["current_win_streak"] + 1 if won else 0
                 stat["longest_win_streak"] = max(stat["longest_win_streak"], stat["current_win_streak"])
         players = []
-        for stat in accum:
+        for name in names:
+            stat = accum[name]
             games = stat.pop("games")
             total_score = stat.pop("total_score")
             total_place = stat.pop("total_place")
