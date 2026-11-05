@@ -259,6 +259,37 @@ process.stdin.on('end',async()=>{
     c.db.close()
 
 
+def test_training_roster_has_one_rotating_learner_and_larger_league(tmp_path,monkeypatch):
+    from qwixx_ai import distributed
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    c.rng.seed(1234)
+    roster=c._training_roster()
+    assert len(roster)==4
+    assert sum(kind=='current' for kind,_ in roster)==1
+    assert c.league.maxlen==12
+    c.db.close()
+
+
+def test_central_rollout_keeps_each_seat_policy_stable_for_whole_game(tmp_path,monkeypatch):
+    from qwixx_ai import distributed
+    from qwixx_ai.heuristic_v2 import heuristic_v2
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    roster=[(f'seat-{i}',None) for i in range(4)]
+    seen={i:set() for i in range(4)}
+    monkeypatch.setattr(c,'_training_roster',lambda:roster)
+
+    def action(spec,game):
+        seen[game.actor].add(spec[0])
+        return heuristic_v2(game)
+
+    monkeypatch.setattr(c,'_training_action',action)
+    c.central_rollout()
+    assert all(seen[i]=={f'seat-{i}'} for i in range(4))
+    c.db.close()
+
+
 def test_central_rollout_generates_valid_persisted_game(tmp_path,monkeypatch):
     from qwixx_ai import distributed
     monkeypatch.setattr(distributed,'ROOT',tmp_path)
