@@ -22,15 +22,24 @@ def decode(a):
     x=a-1;c=x//22
     return (c,ORDER[c][(x%22)//2],bool(x%2))
 
+def actor_seat_order(game):
+    """Return public seats rotated so the current actor is logical seat zero."""
+    actor=game.actor
+    return tuple((actor+offset)%game.n for offset in range(game.n))
+
+
 def observe(game):
     v=[]
-    # All public boards, not only our own. Actor and phase explicitly included.
-    for b in game.boards:
+    seats=actor_seat_order(game)
+    # Canonicalize every position from the current actor's point of view.
+    # Logical seat 0 is always "me"; the remaining seats proceed clockwise.
+    for seat in seats:
+        b=game.boards[seat]
         for c in range(4):v.extend(float(n in b.rows[c]) for n in ORDER[c])
         v.append(b.penalties/4)
-    # Strategic features for each seat/row: progress, remaining opportunities,
-    # next-mark value, and lock readiness. All features remain in [0, 1].
-    for b in game.boards:
+    # Strategic features use the same actor-relative seat order.
+    for seat in seats:
+        b=game.boards[seat]
         for c, order in enumerate(ORDER):
             row=b.rows[c]
             last=order.index(row[-1]) if row else -1
@@ -41,7 +50,11 @@ def observe(game):
         v.append(b.penalties/4)
     v.extend(float(c in game.locks) for c in range(4))
     v.extend(d/6 for d in game.dice)
-    v.extend([game.active/game.n,game.actor/game.n,game.phase/(game.n+1),min(game.turn/100,1),game.active_marks/2])
+    active_relative=(game.active-game.actor)%game.n
+    # actor itself is intentionally omitted: actor-relative observations make it
+    # a constant zero and dropping it forces legacy absolute-seat checkpoints
+    # to be rejected by observation-size validation.
+    v.extend([active_relative/game.n,game.phase/(game.n+1),min(game.turn/100,1),game.active_marks/2])
     return np.array(v,dtype=np.float32)
 
 def mask(game):
