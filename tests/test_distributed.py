@@ -315,8 +315,32 @@ def test_browser_worker_observation_matches_python_dimensions():
     from qwixx_ai import distributed
     from qwixx_ai.core import Game
     from qwixx_ai.env import observe
-    assert len(observe(Game())) == 263
+    assert len(observe(Game())) == 262
     assert 'remaining/11' in distributed.WORKER_JS
+    assert "seats=Array.from({length:4},(_,i)=>(who+i)%4)" in distributed.WORKER_JS
+    assert "((active-who+4)%4)/4" in distributed.WORKER_JS
+
+
+def test_actor_relative_observation_starts_with_current_actor_board():
+    import numpy as np
+    from qwixx_ai.core import Game
+    from qwixx_ai.env import actor_seat_order, observe
+
+    game=Game(seed=13)
+    game.active=1
+    game.phase=1
+    assert game.actor==2
+    game.boards[0].rows[0]=[2]
+    game.boards[1].rows[0]=[3]
+    game.boards[2].rows[0]=[4]
+    game.boards[3].rows[0]=[5]
+    assert actor_seat_order(game)==(2,3,0,1)
+    obs=observe(game)
+    first_row=obs[:11]
+    expected=np.array([float(n==4) for n in range(2,13)],dtype=np.float32)
+    assert np.array_equal(first_row,expected)
+    # actor identity is no longer encoded as an absolute seat feature.
+    assert len(obs)==262
 
 
 def test_training_dashboard_link_and_status():
