@@ -10,7 +10,6 @@ from .core import Game
 from .env import observe,mask,encode,decode
 from .model import (network,choose,save,load,export_policy,model_architecture,
                     model_input_size,DUELING_ARCH)
-from .agents import heuristic,random_agent
 from .heuristic_v2 import heuristic_v2
 from .rollout_policy import rollout_policy
 from .tournament import evaluate
