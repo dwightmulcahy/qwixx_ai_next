@@ -8,7 +8,8 @@ import torch
 from torch import nn
 from .core import Game
 from .env import observe,mask,encode,decode
-from .model import network,choose,save,load
+from .model import (network,choose,save,load,export_policy,model_architecture,
+                    model_input_size,DUELING_ARCH)
 from .agents import heuristic,random_agent
 from .heuristic_v2 import heuristic_v2
 from .tournament import evaluate
@@ -57,8 +58,8 @@ class Coordinator:
         if checkpoint.exists():
             try:
                 loaded=load(checkpoint)
-                if loaded[0].in_features != self.obs_size:
-                    print('Legacy checkpoint has incompatible observations; starting a new model',flush=True)
+                if model_input_size(loaded)!=self.obs_size or model_architecture(loaded)!=DUELING_ARCH:
+                    print('Legacy checkpoint has incompatible observations/architecture; starting a new model',flush=True)
                 else:
                     self.model=loaded
             except Exception as exc:
@@ -68,8 +69,8 @@ class Coordinator:
         if best_path.exists():
             try:
                 candidate=load(best_path)
-                if candidate[0].in_features != self.obs_size:
-                    raise ValueError('Legacy champion observation size')
+                if model_input_size(candidate)!=self.obs_size or model_architecture(candidate)!=DUELING_ARCH:
+                    raise ValueError('Legacy champion observation/architecture')
                 self.best_model=candidate
                 self.best=float(torch.load(best_path,map_location='cpu',weights_only=True).get('win_share',-1))
             except Exception as exc:print('Best checkpoint load failed:',exc,flush=True)
@@ -78,10 +79,12 @@ class Coordinator:
         if state_path.exists():
             try:
                 state=torch.load(state_path,map_location='cpu',weights_only=True)
-                if self.model[0].in_features != self.obs_size:
+                if model_input_size(self.model)!=self.obs_size or model_architecture(self.model)!=DUELING_ARCH:
                     raise ValueError('Incompatible current model')
-                if checkpoint.exists() and load(checkpoint)[0].in_features != self.obs_size:
-                    raise ValueError('Legacy optimizer state; starting fresh')
+                if checkpoint.exists():
+                    saved=load(checkpoint)
+                    if model_input_size(saved)!=self.obs_size or model_architecture(saved)!=DUELING_ARCH:
+                        raise ValueError('Legacy optimizer state; starting fresh')
                 self.optimizer.load_state_dict(state['optimizer'])
                 self.updates=state.get('updates',0)
                 self.games=state.get('games',0)
@@ -259,10 +262,9 @@ class Coordinator:
             return {'session_id':sid,**view}
     def policy_export(self):
         with self.lock:
-            model=self.best_model or self.model;layers=[]
-            for layer in model:
-                if isinstance(layer,nn.Linear):layers.append({'w':layer.weight.detach().tolist(),'b':layer.bias.detach().tolist()})
-            return {'version':self.version,'layers':layers,'observation_size':self.obs_size}
+            model=self.best_model or self.model
+            payload=export_policy(model)
+            return {'version':self.version,'observation_size':self.obs_size,**payload}
     def stats(self):
         return {'training_enabled':TRAINING_ENABLED,'browser_training_enabled':BROWSER_TRAINING_ENABLED,'inference_only':INFERENCE_ONLY,'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run_rollouts(self):
@@ -285,7 +287,8 @@ let enabled=false,completed=0,busy=false,policy=null;
 const inWorker=typeof document==='undefined';
 const order=[Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>i+2),Array.from({length:11},(_,i)=>12-i),Array.from({length:11},(_,i)=>12-i)];
 async function refreshPolicy(){const r=await fetch('/api/policy');if(!r.ok)throw Error('Policy unavailable');policy=await r.json();}
-function inference(input){let v=input;for(let li=0;li<policy.layers.length;li++){const l=policy.layers[li],out=l.b.map((bias,i)=>{let z=bias,w=l.w[i];for(let j=0;j<v.length;j++)z+=w[j]*v[j];return li===policy.layers.length-1?z:Math.max(0,z)});v=out;}return v;}
+function linear(input,layer,relu=false){return layer.b.map((bias,i)=>{let z=bias,w=layer.w[i];for(let j=0;j<input.length;j++)z+=w[j]*input[j];return relu?Math.max(0,z):z})}
+function inference(input){if(policy.architecture==='dueling-v1'){let h=input;for(const layer of policy.trunk)h=linear(h,layer,true);const value=linear(h,policy.value,false)[0],adv=linear(h,policy.advantage,false),mean=adv.reduce((a,b)=>a+b,0)/adv.length;return adv.map(x=>value+x-mean)}let v=input;for(let li=0;li<policy.layers.length;li++)v=linear(v,policy.layers[li],li<policy.layers.length-1);return v;}
 async function runGame(){
  if(!policy||completed%20===0)await refreshPolicy();
  const job=await (await fetch('/api/job')).json();
