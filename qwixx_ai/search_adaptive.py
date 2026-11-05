@@ -10,22 +10,56 @@ import math
 import random
 from pathlib import Path
 
-from .champion import champion
 from .controlled_strategy import paired_compare
 from .heuristic_v2 import heuristic_v2
 from .phase9_search import outcome, state_seed
 
 
-def select(game, initial=16, maximum=128, batch=16, seed=14000000,
-           min_gain=0.03, confidence_z=1.96, stats=None):
-    if initial < 2 or maximum < initial or batch < 1 or min_gain < 0 or confidence_z < 0:
+def search_budget(game, incumbent, base=32, medium=64, critical=128):
+    """Allocate more futures only to strategically consequential decisions."""
+    legal=game.legal()
+    locking=any(action[2] for action in legal)
+    second_lock=locking and len(game.locks)==1
+    penalty_risk=(game.phase==game.n and game.actor==game.active
+                  and game.active_marks==0 and bool(legal))
+    pass_vs_mark=incumbent is None and bool(legal)
+    if second_lock or penalty_risk or pass_vs_mark:
+        return critical
+    if locking or len(legal)>=3 or game.turn>=28:
+        return medium
+    return base
+
+
+def should_search(game, incumbent):
+    """Skip search for trivial openings while retaining tactical exceptions."""
+    if game.n!=4 or game.done:
+        return False
+    legal=game.legal()
+    if not legal:
+        return False
+    if any(action[2] for action in legal):
+        return True
+    if game.phase==game.n and game.actor==game.active and game.active_marks==0:
+        return True
+    return game.turn>=10 and len(legal)>=2
+
+
+def select(game, initial=16, maximum=None, batch=16, seed=14000000,
+           min_gain=0.03, confidence_z=1.96, stats=None,
+           incumbent_policy=heuristic_v2):
+    if initial < 2 or batch < 1 or min_gain < 0 or confidence_z < 0:
         raise ValueError("invalid search settings")
     if game.n != 4 or game.done:
-        return heuristic_v2(game)
+        return incumbent_policy(game)
     actions = [None, *game.legal()]
     if len(actions) == 1:
         return actions[0]
-    incumbent = champion(game)
+    incumbent = incumbent_policy(game)
+    if not should_search(game,incumbent):
+        return incumbent
+    budget=search_budget(game,incumbent) if maximum is None else maximum
+    if budget < initial:
+        raise ValueError("invalid search settings")
     rng = random.Random(state_seed(game, seed))
     totals = [0.0] * len(actions)
     score_totals = [0.0] * len(actions)
@@ -34,7 +68,7 @@ def select(game, initial=16, maximum=128, batch=16, seed=14000000,
     diffs = [[] for _ in actions]
     n = 0
     while True:
-        target = min(maximum, initial if n == 0 else n + batch)
+        target = min(budget, initial if n == 0 else n + batch)
         for _ in range(n, target):
             future = rng.randrange(2**64)
             samples = [outcome(game, action, future) for action in actions]
@@ -57,7 +91,7 @@ def select(game, initial=16, maximum=128, batch=16, seed=14000000,
             best = max(viable, key=lambda i: (totals[i] / n, score_totals[i] / n))
             chosen = actions[best]
             break
-        if n >= maximum:
+        if n >= budget:
             chosen = incumbent
             break
         # If all candidates are convincingly inferior, stop early.
@@ -87,8 +121,9 @@ def evaluate(rounds=12, seed=14020000, initial=16, maximum=64,
     settings = dict(initial=initial, maximum=maximum, batch=batch,
                     min_gain=min_gain)
     stats = {"decisions": 0, "futures": 0, "overrides": 0}
-    candidate = policy(**settings, stats=stats)
-    result = paired_compare(candidate, champion, [heuristic_v2] * 3,
+    from .champion import base_champion
+    candidate = policy(**settings, stats=stats, incumbent_policy=base_champion)
+    result = paired_compare(candidate, base_champion, [heuristic_v2] * 3,
                             rounds=rounds, seed=seed)
     return {
         "experiment": "adaptive_search", "settings": settings,
