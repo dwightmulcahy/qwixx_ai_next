@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from .model import load
+from .model import load,model_architecture,model_input_size
 from .phase113 import read_dataset
 
 
@@ -50,7 +50,7 @@ def train(dataset, checkpoint, output, epochs=6, seed=11050001,
     anchor.eval()
     for parameter in anchor.parameters():
         parameter.requires_grad_(False)
-    size = model[0].in_features
+    size = model_input_size(model)
     if any(len(r["observation"]) != size
            for rows in splits.values() for r in rows):
         raise ValueError("dataset observation shape differs from checkpoint")
@@ -104,6 +104,7 @@ def train(dataset, checkpoint, output, epochs=6, seed=11050001,
             best, best_epoch = validation, epoch
             torch.save({
                 "model": model.state_dict(), "obs_size": size,
+                "architecture": model_architecture(model),
                 "phase": "11.5", "epoch": epoch,
                 "source_checkpoint": str(checkpoint),
                 "dataset": str(dataset), "seed": seed,
