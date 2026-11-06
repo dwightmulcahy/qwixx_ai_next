@@ -33,8 +33,16 @@ def test_web_champion_routes_promoted_policy(monkeypatch):
     import qwixx_ai.web as web
 
     game = Game(seed=4)
-    monkeypatch.setattr(web, "champion", lambda g: ("champion", g.n))
-    assert Session(difficulty="champion").ai(game) == ("champion", 4)
+    model = object()
+    monkeypatch.setattr(
+        web, "choose",
+        lambda selected_model, selected_game, epsilon: (
+            "champion", selected_game.n, selected_model is model, epsilon
+        ),
+    )
+    assert Session(model=model,difficulty="champion").ai(game) == (
+        "champion", 4, True, 0.0
+    )
 
 
 def test_web_advanced_without_model_falls_back_to_v2():

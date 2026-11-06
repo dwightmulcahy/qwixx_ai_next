@@ -4,7 +4,6 @@ from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from .core import Game,COLORS,ORDER
 from .agents import heuristic,random_agent
 from .model import choose,load
-from .champion import champion
 from .heuristic_v2 import heuristic_v2
 from .favicon import FAVICON_SVG
 
@@ -541,7 +540,11 @@ class Session:
     def ai(self,g):
         if self.difficulty=='beginner':return random_agent(g)
         if self.difficulty=='intermediate':return heuristic(g)
-        if self.difficulty=='champion':return champion(g)
+        if self.difficulty=='champion':
+            # Live Champion play should use the promoted checkpoint greedily.
+            # The legacy champion() policy performs synchronous Monte Carlo
+            # search and can take seconds per decision on NAS-class CPUs.
+            return choose(self.model,g,epsilon=0.0) if self.model is not None else heuristic_v2(g)
         if self.model is None:return heuristic_v2(g)
         return choose(self.model,g,epsilon=0.18)
     def apply_action(self,action,source):
