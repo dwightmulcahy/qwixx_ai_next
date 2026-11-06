@@ -1,5 +1,5 @@
 """Local play-versus-AI web UI, standard-library HTTP server."""
-import argparse,json,threading,os,html,copy,platform,sys
+import argparse,json,threading,os,html,copy,platform
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from .core import Game,COLORS,ORDER
 from .agents import heuristic,random_agent
