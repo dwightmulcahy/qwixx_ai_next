@@ -24,6 +24,7 @@ WORKER_TOKEN=os.getenv('QWIXX_WORKER_TOKEN','')
 ADMIN_TOKEN=os.getenv('QWIXX_ADMIN_TOKEN','')
 MAX_BODY=350_000
 MAX_PENDING=500
+MAX_BROWSER_WORKERS=max(1,min(8,int(os.getenv('QWIXX_MAX_BROWSER_WORKERS','2'))))
 
 
 def env_enabled(name, default=True):
@@ -37,8 +38,8 @@ BROWSER_TRAINING_ENABLED=env_enabled('QWIXX_BROWSER_TRAINING_ENABLED', True) and
 
 class Coordinator:
     def __init__(self):
-        self.lock=threading.RLock();self.rng=random.Random()
-        self.pending={};self.replay=deque(maxlen=50000);self.priorities=deque(maxlen=50000)
+        self.lock=threading.RLock();self.training_lock=threading.Lock();self.rng=random.Random()
+        self.pending={};self.replay=deque(maxlen=50000);self.priorities=deque(maxlen=50000);self.replay_revision=0
         self.db=sqlite3.connect(ROOT/'training.sqlite3',check_same_thread=False,timeout=20)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY, source TEXT NOT NULL, scores TEXT NOT NULL, moves TEXT, created REAL NOT NULL, seed INTEGER)')
@@ -173,7 +174,9 @@ class Coordinator:
                 s,a,start,p0=last[who]
                 reward=shaped_reward((g.scores()[who]-start)/25,p0,potential(g,who),False)
                 transitions.append((s,a,reward,observe(g),False,mask(g)))
-            with self.lock:
+            if roster[who][0]=='current':
+                with self.training_lock:a=self._training_action(roster[who],g)
+            else:
                 a=self._training_action(roster[who],g)
             last[who]=(observe(g).copy(),encode(a),g.scores()[who],potential(g,who));moves.append(encode(a));g.step(a)
         scores=g.scores()
@@ -190,6 +193,7 @@ class Coordinator:
     def _add_transitions(self,items):
         self.replay.extend(items)
         self.priorities.extend([max(self.priorities,default=1.0)]*len(items))
+        self.replay_revision+=1
     def _record(self,source,scores,moves,seed=None):
         self.db.execute('INSERT INTO games(source,scores,moves,created,seed) VALUES(?,?,?,?,?)',(source,json.dumps(scores),json.dumps(moves) if moves is not None else None,time.time(),seed))
         self.db.commit()
@@ -221,14 +225,20 @@ class Coordinator:
             rows=self.db.execute('SELECT source,scores,created FROM games ORDER BY id DESC LIMIT ?',(min(max(int(limit),1),500),)).fetchall()
             return [{'source':src,'scores':json.loads(scores),'time':created} for src,scores,created in rows]
     def learn(self):
+        # Keep the coordinator lock only long enough to snapshot replay metadata.
+        # PyTorch forward/backward work runs under a dedicated training lock so
+        # live game requests never queue behind an optimizer step.
         with self.lock:
             if len(self.replay)<256:return
             population=list(self.replay)
-            weights=np.asarray(self.priorities,dtype=np.float64)**0.6
+            priority_values=list(self.priorities)
+            revision=self.replay_revision
+            weights=np.asarray(priority_values,dtype=np.float64)**0.6
             probabilities=weights/weights.sum()
             indices=self.rng.choices(range(len(population)),weights=probabilities,k=64)
             batch=[population[i] for i in indices]
-            ss,aa,rr,ns,dd,mm=zip(*batch)
+        ss,aa,rr,ns,dd,mm=zip(*batch)
+        with self.training_lock:
             q=self.model(torch.from_numpy(np.stack(ss))).gather(1,torch.tensor(aa).long()[:,None]).squeeze(1)
             with torch.no_grad():
                 nextq=self.target(torch.from_numpy(np.stack(ns)))
@@ -243,59 +253,96 @@ class Coordinator:
             losses=nn.functional.smooth_l1_loss(q,target,reduction='none')
             loss=(losses*torch.tensor(importance,dtype=torch.float32)).mean()
             self.optimizer.zero_grad();loss.backward();nn.utils.clip_grad_norm_(self.model.parameters(),5);self.optimizer.step()
-            for index,error in zip(indices,errors):self.priorities[index]=float(error)+0.01
-            self.updates+=1;self.last_loss=round(float(loss.item()),5)
-            if self.updates%300==0:self.target.load_state_dict(self.model.state_dict())
-    def checkpoint(self):
+            with self.lock:
+                # Replay can grow while a batch trains. Only write TD priorities
+                # back when the sampled indices still refer to the same replay.
+                if self.replay_revision==revision:
+                    for index,error in zip(indices,errors):self.priorities[index]=float(error)+0.01
+                self.updates+=1
+                update_number=self.updates
+                self.last_loss=round(float(loss.item()),5)
+            if update_number%300==0:self.target.load_state_dict(self.model.state_dict())
+    def checkpoint(self,force=False):
+        # Promotion evaluation is intentionally deferred while a live game has
+        # been active recently. Even lock-free evaluation is CPU-heavy enough
+        # to create visible latency on small NAS hosts.
+        if not force:
+            idle_seconds=max(0.0,float(os.getenv('QWIXX_CHECKPOINT_IDLE_SECONDS','120')))
+            now=time.time()
+            with self.lock:
+                if any(now-updated<idle_seconds for _,updated,_ in self.sessions.values()):return False
+        # Snapshot mutable training state quickly, then do disk I/O and the
+        # expensive 192-game evaluations without blocking interactive gameplay.
+        with self.training_lock:
+            with self.lock:
+                updates=self.updates;games=self.games;version=self.version
+                champion_snapshot=copy.deepcopy(self.best_model).eval() if self.best_model is not None else None
+            model_snapshot=copy.deepcopy(self.model).eval()
+            optimizer_state=copy.deepcopy(self.optimizer.state_dict())
+        temp=ROOT/'latest.tmp.pt';save(model_snapshot,temp,updates=updates,games=games);temp.replace(ROOT/'latest.pt')
+        state_tmp=ROOT/'trainer.tmp.pt';torch.save({'optimizer':optimizer_state,'updates':updates,'games':games,'version':version},state_tmp);state_tmp.replace(ROOT/'trainer.pt')
+        result=evaluate(model_snapshot,192,seed=123450)
+        champion_eval=evaluate(champion_snapshot,192,seed=123450) if champion_snapshot is not None else None
+        result['champion_win_share']=champion_eval['win_share'] if champion_eval else None
+        promoted=champion_eval is None or result['win_share']>champion_eval['win_share']+0.03
+        if promoted:
+            candidate=ROOT/'candidate.pt';save(model_snapshot,candidate,updates=updates,games=games,win_share=result['win_share']);candidate.replace(ROOT/'best.pt')
         with self.lock:
-            temp=ROOT/'latest.tmp.pt';save(self.model,temp,updates=self.updates,games=self.games);temp.replace(ROOT/'latest.pt')
-            state_tmp=ROOT/'trainer.tmp.pt';torch.save({'optimizer':self.optimizer.state_dict(),'updates':self.updates,'games':self.games,'version':self.version},state_tmp);state_tmp.replace(ROOT/'trainer.pt')
             self.version+=1
-            result=evaluate(self.model,192,seed=123450);self.last_eval=result
-            champion_eval=evaluate(self.best_model,192,seed=123450) if self.best_model is not None else None
-            result['champion_win_share']=champion_eval['win_share'] if champion_eval else None
-            if champion_eval is None or result['win_share']>champion_eval['win_share']+0.03:
-                candidate=ROOT/'candidate.pt';save(self.model,candidate,updates=self.updates,games=self.games,win_share=result['win_share']);candidate.replace(ROOT/'best.pt')
+            self.last_eval=result
+            if promoted:
                 if self.best_model is not None:self.league.append(copy.deepcopy(self.best_model).eval())
-                self.best=result['win_share'];self.best_model=copy.deepcopy(self.model).eval();self.promoted_at=time.time()
-            with self.log.open('a') as f:f.write(json.dumps({'time':time.time(),**self.stats()})+'\n')
+                self.best=result['win_share'];self.best_model=copy.deepcopy(model_snapshot).eval();self.promoted_at=time.time()
+            metrics={'time':time.time(),**self.stats()}
+        with self.log.open('a') as f:f.write(json.dumps(metrics)+'\n')
+        return True
     def new_session(self,difficulty='champion',player_id=None,optimal_first_roll=False,randomize_seating=True):
         with self.lock:
             for key,(_,updated,_) in list(self.sessions.items()):
                 if time.time()-updated>86400:self.sessions.pop(key,None)
             if len(self.sessions)>=200:raise ValueError('Too many game sessions')
-            if player_id is not None:self.player_stats.profile(player_id)
-            sid=uuid.uuid4().hex;session=Session(model=self.best_model,difficulty=difficulty);session.reset_game(optimal_first_roll,randomize_seating);self.sessions[sid]=(session,time.time(),player_id)
-            return {'session_id':sid,**session.view()}
+            model=self.best_model
+        if player_id is not None:self.player_stats.profile(player_id)
+        sid=uuid.uuid4().hex;session=Session(model=model,difficulty=difficulty);session.reset_game(optimal_first_roll,randomize_seating)
+        with self.lock:self.sessions[sid]=(session,time.time(),player_id)
+        return {'session_id':sid,**session.view()}
     def session_action(self,sid,action,expected_turn=None,expected_phase=None):
         with self.lock:
             entry=self.sessions.get(sid)
             if not entry:raise ValueError('Session expired; start a new game')
             session,_,player_id=entry
-            with session.lock:
-                if expected_turn is not None and (type(expected_turn) is not int or expected_turn!=session.game.turn):raise ValueError('Game state changed; start a new game or reload')
-                if expected_phase is not None and (type(expected_phase) is not int or expected_phase!=session.game.phase):raise ValueError('Step already advanced; reload game')
-                session.apply_action(action,'human');session.advance();view=session.view()
-                if session.game.done and player_id is not None:self.player_stats.record(sid,player_id,session.difficulty,session.game,session.ai_names)
-            self.sessions[sid]=(session,time.time(),player_id)
-            return {'session_id':sid,**view}
+        # Session locking is sufficient for a single game. Do not hold the
+        # coordinator lock while AI opponents think or advance their turns.
+        with session.lock:
+            if expected_turn is not None and (type(expected_turn) is not int or expected_turn!=session.game.turn):raise ValueError('Game state changed; start a new game or reload')
+            if expected_phase is not None and (type(expected_phase) is not int or expected_phase!=session.game.phase):raise ValueError('Step already advanced; reload game')
+            session.apply_action(action,'human');session.advance();view=session.view()
+            if session.game.done and player_id is not None:self.player_stats.record(sid,player_id,session.difficulty,session.game,session.ai_names)
+        with self.lock:
+            if sid in self.sessions:self.sessions[sid]=(session,time.time(),player_id)
+        return {'session_id':sid,**view}
     def session_undo_step1(self,sid,expected_turn=None,expected_phase=None):
         with self.lock:
             entry=self.sessions.get(sid)
             if not entry:raise ValueError('Session expired; start a new game')
             session,_,player_id=entry
-            with session.lock:
-                if expected_turn is None or type(expected_turn) is not int or expected_turn!=session.game.turn:raise ValueError('Game state changed; reload')
-                if expected_phase is None or type(expected_phase) is not int or expected_phase!=session.game.phase:raise ValueError('Step already advanced; reload')
-                session.undo_step1()
-                view=session.view()
-            self.sessions[sid]=(session,time.time(),player_id)
-            return {'session_id':sid,**view}
+        with session.lock:
+            if expected_turn is None or type(expected_turn) is not int or expected_turn!=session.game.turn:raise ValueError('Game state changed; reload')
+            if expected_phase is None or type(expected_phase) is not int or expected_phase!=session.game.phase:raise ValueError('Step already advanced; reload')
+            session.undo_step1()
+            view=session.view()
+        with self.lock:
+            if sid in self.sessions:self.sessions[sid]=(session,time.time(),player_id)
+        return {'session_id':sid,**view}
     def policy_export(self):
         with self.lock:
-            model=self.best_model or self.model
+            model=self.best_model
+            version=self.version
+        if model is None:
+            with self.training_lock:payload=export_policy(self.model)
+        else:
             payload=export_policy(model)
-            return {'version':self.version,'observation_size':self.obs_size,**payload}
+        return {'version':version,'observation_size':self.obs_size,**payload}
     def stats(self):
         return {'training_enabled':TRAINING_ENABLED,'browser_training_enabled':BROWSER_TRAINING_ENABLED,'inference_only':INFERENCE_ONLY,'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run_rollouts(self):
@@ -305,12 +352,14 @@ class Coordinator:
             except Exception as exc:print('Rollout error:',repr(exc),flush=True);self.stop.wait(2)
     def run(self):
         last=time.monotonic()
+        updates_per_cycle=max(1,min(10,int(os.getenv('QWIXX_TRAINING_UPDATES_PER_CYCLE','1'))))
+        cycle_sleep=max(.05,min(5.0,float(os.getenv('QWIXX_TRAINING_CYCLE_SLEEP','0.20'))))
         while not self.stop.is_set():
             if self.paused.is_set():self.stop.wait(.1);continue
             try:
-                for _ in range(3):self.learn()
+                for _ in range(updates_per_cycle):self.learn()
                 if time.monotonic()-last>60:self.checkpoint();last=time.monotonic()
-                self.stop.wait(.05)
+                self.stop.wait(cycle_sleep)
             except Exception as exc:print('Coordinator error:',repr(exc),flush=True);self.stop.wait(2)
 
 WORKER_JS=r'''
@@ -347,16 +396,16 @@ DASHBOARD_HTML=GAME_HTML.replace('</body>', '''
 <hr id="training-dashboard"><h2>Distributed training</h2>
 <p id="trainingStats">Loading training status…</p>
 <button id="workerToggle" onclick="toggleBrowserWorkers()">Start browser training</button>
-<p id="workerStatus" class="hint">Browser worker idle. Up to two worker threads will contribute verified games without blocking the game UI.</p>
+<p id="workerStatus" class="hint">Browser worker idle. Up to __MAX_BROWSER_WORKERS__ worker threads will contribute verified games without blocking the game UI.</p>
 <canvas id="trainingChart" width="860" height="180" style="background:#0b1220;border-radius:8px;max-width:100%"></canvas>
 <h3>Recent training games</h3><div id="trainingHistory" class="hint">Loading…</div>
 <script src="/worker.js"></script><script>
 let browserWorkers=[];
-function toggleBrowserWorkers(){if(browserWorkers.length){for(const w of browserWorkers)w.postMessage('stop');browserWorkers=[];document.getElementById('workerToggle').textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser workers stopped.';return}let count=Math.min(2,navigator.hardwareConcurrency||1);for(let i=0;i<count;i++){let w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress')document.getElementById('workerStatus').textContent=`Browser workers active · latest worker completed ${e.data.completed} · policy ${e.data.version}`;if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');browserWorkers.push(w)}document.getElementById('workerToggle').textContent='Stop browser training';}
+function toggleBrowserWorkers(){if(browserWorkers.length){for(const w of browserWorkers)w.postMessage('stop');browserWorkers=[];document.getElementById('workerToggle').textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser workers stopped.';return}let count=Math.min(__MAX_BROWSER_WORKERS__,navigator.hardwareConcurrency||1);for(let i=0;i<count;i++){let w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress')document.getElementById('workerStatus').textContent=`Browser workers active · latest worker completed ${e.data.completed} · policy ${e.data.version}`;if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');browserWorkers.push(w)}document.getElementById('workerToggle').textContent='Stop browser training';}
 let metricPoints=[];
 async function drawDashboard(){try{const x=await(await fetch('/api/stats')).json();metricPoints.push(x);metricPoints=metricPoints.slice(-60);document.getElementById('trainingStats').textContent=`Training ${x.paused?'PAUSED':'ACTIVE'} · uptime ${Math.floor(x.uptime_seconds/60)} min · Games ${x.games} · central ${x.central_games} · browser ${x.browser_games} · updates ${x.updates} · replay ${x.replay_size} · loss ${x.loss??'—'} · best ${(100*x.best_win_share).toFixed(1)}% · sessions ${x.sessions} · DB ${x.database_games}`;const c=document.getElementById('trainingChart'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#60a5fa';ctx.beginPath();metricPoints.forEach((p,i)=>{let xx=i*Math.max(1,c.width/59),yy=c.height-20-Math.min(140,(p.updates/(metricPoints[metricPoints.length-1].updates||1))*140);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.stroke();const h=await(await fetch('/api/history?limit=12')).json();document.getElementById('trainingHistory').textContent=h.games.map(g=>`${g.source}: ${g.scores.join('/')}`).join(' · ')||'No persisted games yet.';}catch(e){document.getElementById('trainingStats').textContent='Training status unavailable: '+e.message}}
 setInterval(drawDashboard,5000);drawDashboard();
-</script></body>''')
+</script></body>''').replace('__MAX_BROWSER_WORKERS__',str(MAX_BROWSER_WORKERS))
 
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
@@ -444,7 +493,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif command=='resume':
                     if not TRAINING_ENABLED:raise ValueError('Training disabled by server configuration')
                     self.coord.paused.clear()
-                elif command=='checkpoint':self.coord.checkpoint()
+                elif command=='checkpoint':self.coord.checkpoint(force=True)
                 elif command=='rollback':
                     with self.coord.lock:
                         if self.coord.best_model is None:raise ValueError('No champion checkpoint')
@@ -514,5 +563,5 @@ def main():
         c.stop.set();server.server_close()
         for worker in workers:worker.join(timeout=10)
         if trainer:trainer.join(timeout=10)
-        c.checkpoint();c.db.close()
+        c.checkpoint(force=True);c.db.close()
 if __name__=='__main__':main()

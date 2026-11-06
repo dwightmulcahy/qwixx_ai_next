@@ -9,6 +9,28 @@
 - **Playing:** Choose Beginner (random), Intermediate (heuristic), Advanced (exploratory model) or Champion (greedy model). Before a champion is trained, Advanced and Champion use the heuristic fallback. The move analysis shows immediate score and permanently skipped numbers; it is not a faithful explanation of neural-network internal reasoning.
 - **Operations:** Training pause/resume, manual checkpoint and rollback to best model are exposed through an administrator API.
 
+## Interactive QNAP settings
+
+For the web game, keep browser-generated training enabled but disable central
+server rollouts. The trainer consumes browser submissions in short background
+bursts and heavy promotion evaluation waits until no game has been active for
+the configured idle window.
+
+```env
+QWIXX_TRAINING_ENABLED=true
+QWIXX_CENTRAL_WORKERS=0
+QWIXX_BROWSER_TRAINING_ENABLED=true
+QWIXX_INFERENCE_ONLY=false
+QWIXX_TORCH_THREADS=1
+QWIXX_MAX_BROWSER_WORKERS=2
+QWIXX_TRAINING_UPDATES_PER_CYCLE=1
+QWIXX_TRAINING_CYCLE_SLEEP=0.20
+QWIXX_CHECKPOINT_IDLE_SECONDS=120
+```
+
+Do not use YAML syntax such as `QWIXX_TORCH_THREADS: "2"` inside an
+`.env` file. Environment files use `NAME=value`.
+
 ## Deploy on QNAP
 
 ```sh
