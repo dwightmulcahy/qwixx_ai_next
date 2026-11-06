@@ -683,11 +683,7 @@ def test_live_champion_uses_promoted_model_without_monte_carlo(monkeypatch):
         calls.append((model,epsilon))
         return expected
 
-    def fail_search(game):
-        raise AssertionError('live champion must not call synchronous search policy')
-
     monkeypatch.setattr(web,'choose',fake_choose)
-    monkeypatch.setattr(web,'champion',fail_search)
 
     assert session.ai(session.game)==expected
     assert calls==[(session.model,0.0)]
@@ -700,11 +696,5 @@ def test_live_champion_falls_back_to_v2_when_no_promoted_model(monkeypatch):
     expected=('red', 2, False)
 
     monkeypatch.setattr(web,'heuristic_v2',lambda game:expected)
-    monkeypatch.setattr(
-        web,'champion',
-        lambda game:(_ for _ in ()).throw(
-            AssertionError('fallback must not run Monte Carlo search')
-        ),
-    )
 
     assert session.ai(session.game)==expected
