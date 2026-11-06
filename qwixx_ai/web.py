@@ -541,7 +541,11 @@ class Session:
     def ai(self,g):
         if self.difficulty=='beginner':return random_agent(g)
         if self.difficulty=='intermediate':return heuristic(g)
-        if self.difficulty=='champion':return champion(g)
+        if self.difficulty=='champion':
+            # Live Champion play should use the promoted checkpoint greedily.
+            # The legacy champion() policy performs synchronous Monte Carlo
+            # search and can take seconds per decision on NAS-class CPUs.
+            return choose(self.model,g,epsilon=0.0) if self.model is not None else heuristic_v2(g)
         if self.model is None:return heuristic_v2(g)
         return choose(self.model,g,epsilon=0.18)
     def apply_action(self,action,source):
