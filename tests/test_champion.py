@@ -81,7 +81,7 @@ def test_live_champion_stops_after_budget_between_matched_futures(monkeypatch):
     monkeypatch.setattr(champion_module, "_live_incumbent", lambda game: legal[0])
     monkeypatch.setattr(champion_module, "_live_should_search", lambda game, incumbent: True)
 
-    clock = iter([0.0, 0.0, 0.40, 0.40])
+    clock = iter([0.0, 0.40, 0.40])
     monkeypatch.setattr(champion_module.time, "perf_counter", lambda: next(clock, 0.40))
     monkeypatch.setattr(champion_module, "outcome", lambda game, action, seed: (0.0, 0.0))
 
