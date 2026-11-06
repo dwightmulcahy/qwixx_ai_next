@@ -4,7 +4,6 @@ from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from .core import Game,COLORS,ORDER
 from .agents import heuristic,random_agent
 from .model import choose,load
-from .champion import champion
 from .heuristic_v2 import heuristic_v2
 from .favicon import FAVICON_SVG
 
