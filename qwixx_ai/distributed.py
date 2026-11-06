@@ -262,7 +262,15 @@ class Coordinator:
                 update_number=self.updates
                 self.last_loss=round(float(loss.item()),5)
             if update_number%300==0:self.target.load_state_dict(self.model.state_dict())
-    def checkpoint(self):
+    def checkpoint(self,force=False):
+        # Promotion evaluation is intentionally deferred while a live game has
+        # been active recently. Even lock-free evaluation is CPU-heavy enough
+        # to create visible latency on small NAS hosts.
+        if not force:
+            idle_seconds=max(0.0,float(os.getenv('QWIXX_CHECKPOINT_IDLE_SECONDS','120')))
+            now=time.time()
+            with self.lock:
+                if any(now-updated<idle_seconds for _,updated,_ in self.sessions.values()):return False
         # Snapshot mutable training state quickly, then do disk I/O and the
         # expensive 192-game evaluations without blocking interactive gameplay.
         with self.training_lock:
@@ -287,6 +295,7 @@ class Coordinator:
                 self.best=result['win_share'];self.best_model=copy.deepcopy(model_snapshot).eval();self.promoted_at=time.time()
             metrics={'time':time.time(),**self.stats()}
         with self.log.open('a') as f:f.write(json.dumps(metrics)+'\n')
+        return True
     def new_session(self,difficulty='champion',player_id=None,optimal_first_roll=False,randomize_seating=True):
         with self.lock:
             for key,(_,updated,_) in list(self.sessions.items()):
@@ -484,7 +493,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif command=='resume':
                     if not TRAINING_ENABLED:raise ValueError('Training disabled by server configuration')
                     self.coord.paused.clear()
-                elif command=='checkpoint':self.coord.checkpoint()
+                elif command=='checkpoint':self.coord.checkpoint(force=True)
                 elif command=='rollback':
                     with self.coord.lock:
                         if self.coord.best_model is None:raise ValueError('No champion checkpoint')
@@ -554,5 +563,5 @@ def main():
         c.stop.set();server.server_close()
         for worker in workers:worker.join(timeout=10)
         if trainer:trainer.join(timeout=10)
-        c.checkpoint();c.db.close()
+        c.checkpoint(force=True);c.db.close()
 if __name__=='__main__':main()
