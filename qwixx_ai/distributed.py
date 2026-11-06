@@ -24,6 +24,7 @@ WORKER_TOKEN=os.getenv('QWIXX_WORKER_TOKEN','')
 ADMIN_TOKEN=os.getenv('QWIXX_ADMIN_TOKEN','')
 MAX_BODY=350_000
 MAX_PENDING=500
+MAX_BROWSER_WORKERS=max(1,min(8,int(os.getenv('QWIXX_MAX_BROWSER_WORKERS','2'))))
 
 
 def env_enabled(name, default=True):
@@ -173,7 +174,9 @@ class Coordinator:
                 s,a,start,p0=last[who]
                 reward=shaped_reward((g.scores()[who]-start)/25,p0,potential(g,who),False)
                 transitions.append((s,a,reward,observe(g),False,mask(g)))
-            with self.lock:
+            if roster[who][0]=='current':
+                with self.training_lock:a=self._training_action(roster[who],g)
+            else:
                 a=self._training_action(roster[who],g)
             last[who]=(observe(g).copy(),encode(a),g.scores()[who],potential(g,who));moves.append(encode(a));g.step(a)
         scores=g.scores()
@@ -324,9 +327,13 @@ class Coordinator:
         return {'session_id':sid,**view}
     def policy_export(self):
         with self.lock:
-            model=self.best_model or self.model
+            model=self.best_model
+            version=self.version
+        if model is None:
+            with self.training_lock:payload=export_policy(self.model)
+        else:
             payload=export_policy(model)
-            return {'version':self.version,'observation_size':self.obs_size,**payload}
+        return {'version':version,'observation_size':self.obs_size,**payload}
     def stats(self):
         return {'training_enabled':TRAINING_ENABLED,'browser_training_enabled':BROWSER_TRAINING_ENABLED,'inference_only':INFERENCE_ONLY,'paused':self.paused.is_set(),'uptime_seconds':int(time.time()-self.started_at),'database_games':self.db.execute('SELECT COUNT(*) FROM games').fetchone()[0],'games':self.games,'browser_games':self.browser_games,'central_games':self.central_games,'replay_size':len(self.replay),'updates':self.updates,'model_version':self.version,'loss':self.last_loss,'epsilon':self.exploration(),'best_win_share':self.best,'evaluation':self.last_eval,'promoted_at':self.promoted_at,'sessions':len(self.sessions),'league_size':len(self.league)}
     def run_rollouts(self):
@@ -380,16 +387,16 @@ DASHBOARD_HTML=GAME_HTML.replace('</body>', '''
 <hr id="training-dashboard"><h2>Distributed training</h2>
 <p id="trainingStats">Loading training status…</p>
 <button id="workerToggle" onclick="toggleBrowserWorkers()">Start browser training</button>
-<p id="workerStatus" class="hint">Browser worker idle. Up to two worker threads will contribute verified games without blocking the game UI.</p>
+<p id="workerStatus" class="hint">Browser worker idle. Up to __MAX_BROWSER_WORKERS__ worker threads will contribute verified games without blocking the game UI.</p>
 <canvas id="trainingChart" width="860" height="180" style="background:#0b1220;border-radius:8px;max-width:100%"></canvas>
 <h3>Recent training games</h3><div id="trainingHistory" class="hint">Loading…</div>
 <script src="/worker.js"></script><script>
 let browserWorkers=[];
-function toggleBrowserWorkers(){if(browserWorkers.length){for(const w of browserWorkers)w.postMessage('stop');browserWorkers=[];document.getElementById('workerToggle').textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser workers stopped.';return}let count=Math.min(2,navigator.hardwareConcurrency||1);for(let i=0;i<count;i++){let w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress')document.getElementById('workerStatus').textContent=`Browser workers active · latest worker completed ${e.data.completed} · policy ${e.data.version}`;if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');browserWorkers.push(w)}document.getElementById('workerToggle').textContent='Stop browser training';}
+function toggleBrowserWorkers(){if(browserWorkers.length){for(const w of browserWorkers)w.postMessage('stop');browserWorkers=[];document.getElementById('workerToggle').textContent='Start browser training';document.getElementById('workerStatus').textContent='Browser workers stopped.';return}let count=Math.min(__MAX_BROWSER_WORKERS__,navigator.hardwareConcurrency||1);for(let i=0;i<count;i++){let w=new Worker('/worker.js');w.onmessage=e=>{if(e.data.type==='progress')document.getElementById('workerStatus').textContent=`Browser workers active · latest worker completed ${e.data.completed} · policy ${e.data.version}`;if(e.data.type==='error')document.getElementById('workerStatus').textContent='Worker error: '+e.data.message};w.postMessage('start');browserWorkers.push(w)}document.getElementById('workerToggle').textContent='Stop browser training';}
 let metricPoints=[];
 async function drawDashboard(){try{const x=await(await fetch('/api/stats')).json();metricPoints.push(x);metricPoints=metricPoints.slice(-60);document.getElementById('trainingStats').textContent=`Training ${x.paused?'PAUSED':'ACTIVE'} · uptime ${Math.floor(x.uptime_seconds/60)} min · Games ${x.games} · central ${x.central_games} · browser ${x.browser_games} · updates ${x.updates} · replay ${x.replay_size} · loss ${x.loss??'—'} · best ${(100*x.best_win_share).toFixed(1)}% · sessions ${x.sessions} · DB ${x.database_games}`;const c=document.getElementById('trainingChart'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#60a5fa';ctx.beginPath();metricPoints.forEach((p,i)=>{let xx=i*Math.max(1,c.width/59),yy=c.height-20-Math.min(140,(p.updates/(metricPoints[metricPoints.length-1].updates||1))*140);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.stroke();const h=await(await fetch('/api/history?limit=12')).json();document.getElementById('trainingHistory').textContent=h.games.map(g=>`${g.source}: ${g.scores.join('/')}`).join(' · ')||'No persisted games yet.';}catch(e){document.getElementById('trainingStats').textContent='Training status unavailable: '+e.message}}
 setInterval(drawDashboard,5000);drawDashboard();
-</script></body>''')
+</script></body>''').replace('__MAX_BROWSER_WORKERS__',str(MAX_BROWSER_WORKERS))
 
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
