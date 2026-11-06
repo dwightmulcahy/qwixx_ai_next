@@ -672,29 +672,29 @@ def test_browser_worker_limit_is_configurable():
     assert 'Up to 2 worker threads' in distributed.DASHBOARD_HTML
 
 
-def test_live_champion_uses_promoted_model_without_monte_carlo(monkeypatch):
+def test_live_champion_uses_bounded_search_policy(monkeypatch):
     from qwixx_ai import web
 
     session=web.Session(model=object(),difficulty='champion')
     expected=('green', 2, False)
     calls=[]
 
-    def fake_choose(model,game,epsilon):
-        calls.append((model,epsilon))
+    def fake_live_champion(game):
+        calls.append(game)
         return expected
 
-    monkeypatch.setattr(web,'choose',fake_choose)
+    monkeypatch.setattr(web,'live_champion',fake_live_champion)
 
     assert session.ai(session.game)==expected
-    assert calls==[(session.model,0.0)]
+    assert calls==[session.game]
 
 
-def test_live_champion_falls_back_to_v2_when_no_promoted_model(monkeypatch):
+def test_live_champion_does_not_depend_on_promoted_model(monkeypatch):
     from qwixx_ai import web
 
     session=web.Session(model=None,difficulty='champion')
     expected=('red', 2, False)
 
-    monkeypatch.setattr(web,'heuristic_v2',lambda game:expected)
+    monkeypatch.setattr(web,'live_champion',lambda game:expected)
 
     assert session.ai(session.game)==expected
