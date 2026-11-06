@@ -600,3 +600,73 @@ def test_penalty_notifications_block_only_for_the_human_player():
     assert "async function startNewGame(optimalFirstRoll){closeNewGameDialog();clearPenaltyModal()" in HTML
     assert "async function reset(optimalFirstRoll=false){clearPenaltyModal()" in HTML
     assert "if(next&&state?.session_id===sid)" in HTML
+
+
+def test_live_game_does_not_hold_coordinator_lock_while_ai_advances(tmp_path,monkeypatch):
+    import threading
+    from types import SimpleNamespace
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    acquired=[]
+
+    class FakeSession:
+        def __init__(self):
+            self.lock=threading.Lock()
+            self.game=SimpleNamespace(done=False)
+            self.difficulty='champion'
+            self.ai_names=[]
+        def apply_action(self,action,source):
+            pass
+        def advance(self):
+            result=[]
+            def try_lock():
+                ok=c.lock.acquire(timeout=.25)
+                result.append(ok)
+                if ok:c.lock.release()
+            th=threading.Thread(target=try_lock)
+            th.start();th.join()
+            acquired.extend(result)
+        def view(self):
+            return {'done':False}
+
+    session=FakeSession()
+    c.sessions['live']=(session,0.0,None)
+    try:
+        c.session_action('live',None)
+        assert acquired==[True]
+    finally:
+        c.db.close()
+
+
+def test_checkpoint_defers_heavy_evaluation_during_recent_game(tmp_path,monkeypatch):
+    import time
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed,'ROOT',tmp_path)
+    c=distributed.Coordinator()
+    c.sessions['live']=(object(),time.time(),None)
+    try:
+        assert c.checkpoint() is False
+        assert not (tmp_path/'latest.pt').exists()
+    finally:
+        c.db.close()
+
+
+def test_compose_honors_interactive_training_env():
+    from pathlib import Path
+
+    compose=Path('compose.yaml').read_text()
+    assert 'QWIXX_CENTRAL_WORKERS: ${QWIXX_CENTRAL_WORKERS:-0}' in compose
+    assert 'QWIXX_TORCH_THREADS: ${QWIXX_TORCH_THREADS:-1}' in compose
+    assert 'QWIXX_TRAINING_UPDATES_PER_CYCLE: ${QWIXX_TRAINING_UPDATES_PER_CYCLE:-1}' in compose
+    assert 'QWIXX_TRAINING_CYCLE_SLEEP: ${QWIXX_TRAINING_CYCLE_SLEEP:-0.20}' in compose
+    assert 'QWIXX_CENTRAL_WORKERS: "2"' not in compose
+
+
+def test_browser_worker_limit_is_configurable():
+    from qwixx_ai import distributed
+
+    assert 'Math.min(2,navigator.hardwareConcurrency||1)' in distributed.DASHBOARD_HTML
+    assert 'Up to 2 worker threads' in distributed.DASHBOARD_HTML
