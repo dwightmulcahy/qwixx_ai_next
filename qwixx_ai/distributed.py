@@ -451,7 +451,8 @@ class Handler(BaseHTTPRequestHandler):
                 entry=self.coord.sessions.get(sid)
                 if not entry:return self.reply({'error':'Session not found'},404)
                 if entry[2] is not None and entry[2]!=self.player_id():return self.reply({'error':'Forbidden'},403)
-                return self.reply({'actor':entry[0].thinking_actor})
+                snapshot=entry[0].thinking_view
+                return self.reply({'actor':entry[0].thinking_actor,'state':snapshot})
             if self.path.startswith('/api/history'):
                 try:limit=int(self.path.split('limit=',1)[1].split('&',1)[0]) if 'limit=' in self.path else 100
                 except ValueError:limit=100
