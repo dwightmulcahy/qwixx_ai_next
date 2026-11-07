@@ -10,6 +10,14 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 
+def dismiss_first_roller(page):
+    dialog = page.locator("#first-roller-modal")
+    dialog.wait_for(state="visible", timeout=5000)
+    assert dialog.get_by_text("First roller", exact=False).is_visible()
+    dialog.get_by_role("button", name="Start game").click()
+    dialog.wait_for(state="detached", timeout=5000)
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="qwixx-smoke-") as directory:
         env = dict(os.environ, QWIXX_DATA=str(Path(directory) / "runs"), QWIXX_CENTRAL_WORKERS="0")
@@ -44,6 +52,7 @@ def main():
                     page.locator("#boards").wait_for(timeout=30000)
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.evaluate("sessionStorage.getItem('qwixx-play-mode')") == "guest"
+                    dismiss_first_roller(page)
                     dice_tile = page.locator(".dice-status")
                     assert dice_tile.locator(".dice-move-controls").is_visible()
                     assert "Enter: Mark" in dice_tile.inner_text()
@@ -132,6 +141,7 @@ def main():
                     )
                     assert new_game.is_hidden()
                     assert finding_roll.is_hidden()
+                    dismiss_first_roller(page)
                     assert page.evaluate(
                         """() => state.legal.some(a => {
                             const order = a[0] < 2
@@ -160,6 +170,7 @@ def main():
                         timeout=10000,
                     )
                     assert finding_roll.is_hidden()
+                    dismiss_first_roller(page)
 
                     # The human mark paints before the AI thinking indicator appears.
                     page.evaluate(
@@ -200,6 +211,7 @@ def main():
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
+                    dismiss_first_roller(page)
 
                     # AI strikes are nonblocking: event strip + visual X box, no modal.
                     page.evaluate(
@@ -247,6 +259,7 @@ def main():
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
+                    dismiss_first_roller(page)
 
                     # Dialogs use the signed-in display name instead of generic "You".
                     page.evaluate("() => { verifiedPlayer={name:'dWiGhT'}; setPlayMode('registered'); }")
@@ -461,6 +474,7 @@ def main():
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_function("document.querySelector('#boards').innerHTML.length > 100", timeout=30000)
                     assert page.locator("#welcome-modal").is_hidden()
+                    dismiss_first_roller(page)
                     assert page.locator("body").inner_text().strip()
                     assert not errors, errors
                 finally:
