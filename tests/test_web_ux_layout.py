@@ -686,3 +686,16 @@ def test_thinking_progress_can_refresh_dice_before_ai_move_completes():
         "thinkingActor!==progress.actor",
     ):
         assert expected in html, expected
+
+
+def test_row_close_dialog_explains_game_end_control_and_remaining_win_path():
+    html = html_source()
+    for expected in (
+        "function remainingPlayerCanEndGameThisRoll(action)",
+        "No remaining player can end the game on this roll.",
+        "Closing this row will not immediately hand another player a second lock.",
+        "humanOutcome==='can still take 1st'?'win'",
+        "humanOutcome==='can still tie 1st'?'tie for 1st'",
+        "scoreCeilingOutcome(scores,maxScores,0)",
+    ):
+        assert expected in html, expected
