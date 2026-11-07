@@ -358,7 +358,7 @@ let moving=false;function showNewPenalties(previous,next){
  dialog.appendChild(button);overlay.appendChild(dialog);document.body.appendChild(overlay);button.focus();
 }
 function nextBrowserPaint(){return new Promise(resolve=>{if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(resolve));else setTimeout(resolve,0)})}
-async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;optimisticAction=a===null?null:a;thinkingVisible=a===null;if(optimisticAction){render();await nextBrowserPaint()}thinkingVisible=true;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid&&thinkingActor!==progress.actor){thinkingActor=progress.actor;render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next&&state?.session_id===sid){optimisticAction=null;state=next;pending=null;recordMoveChanges(previous,next);render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;thinkingVisible=false;optimisticAction=null;if(state)render()}}
+async function act(a){if(moving||!state||state.done)return;moving=true;thinkingActor=null;optimisticAction=a===null?null:a;thinkingVisible=a===null;if(optimisticAction){render();await nextBrowserPaint()}thinkingVisible=true;render();const sid=state.session_id;let polling=false;const poll=async()=>{if(polling||!moving||state?.session_id!==sid)return;polling=true;try{const response=await fetch('/api/session-progress?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(response.ok){const progress=await response.json();if(moving&&state?.session_id===sid){let changed=false;if(progress.state){const snapshot={...progress.state,session_id:sid};const diceChanged=JSON.stringify(snapshot.dice)!==JSON.stringify(state.dice),turnChanged=snapshot.turn!==state.turn,phaseChanged=snapshot.phase!==state.phase,actorChanged=snapshot.actor!==state.actor;if(diceChanged||turnChanged||phaseChanged||actorChanged){state=snapshot;optimisticAction=null;pending=null;changed=true}}if(thinkingActor!==progress.actor){thinkingActor=progress.actor;changed=true}if(changed)render()}}}catch(e){console.debug('Thinking progress unavailable',e)}finally{polling=false}};const interval=setInterval(poll,200);void poll();try{const previous=state;const next=await api('/move',{action:a,session_id:sid,expected_turn:state.turn,expected_phase:state.phase});if(next&&state?.session_id===sid){optimisticAction=null;state=next;pending=null;recordMoveChanges(previous,next);render();showNewPenalties(previous,next)}}finally{clearInterval(interval);moving=false;thinkingActor=null;thinkingVisible=false;optimisticAction=null;if(state)render()}}
 
 let decisionAction=null;
 function openDecision(title,bodyHtml,confirmLabel,tone,action){const modal=document.getElementById('decision-modal'),dialog=document.getElementById('decision-dialog'),titleEl=document.getElementById('decision-title'),body=document.getElementById('decision-body'),confirm=document.getElementById('decision-confirm');if(!modal||!dialog||!titleEl||!body||!confirm)return;decisionAction=action;titleEl.textContent=title;body.innerHTML=bodyHtml;confirm.textContent=confirmLabel;dialog.className='decision-dialog '+(tone==='danger'?'danger':'warning');confirm.className=tone==='danger'?'confirm-danger':'confirm-warning';modal.hidden=false;confirm.focus?.()}
@@ -541,14 +541,14 @@ def new_play_game(optimal_first_roll=False,randomize_seating=True):
 class Session:
     def __init__(self,model=None,difficulty='champion'):
         if difficulty not in ('beginner','intermediate','advanced','champion'):raise ValueError('Invalid difficulty')
-        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game();self.ai_names=list(AI_NAMES);self.history=[];self.step1_snapshot=None;self.thinking_actor=None
+        self.model=model;self.difficulty=difficulty;self.lock=threading.Lock();self.game=Game();self.ai_names=list(AI_NAMES);self.history=[];self.step1_snapshot=None;self.thinking_actor=None;self.thinking_view=None
     def reset_game(self,optimal_first_roll=False,randomize_seating=True):
         if type(optimal_first_roll) is not bool:raise ValueError('optimal_first_roll must be boolean')
         if type(randomize_seating) is not bool:raise ValueError('randomize_seating must be boolean')
         self.game=new_play_game(optimal_first_roll,randomize_seating)
         self.ai_names=list(AI_NAMES)
         if randomize_seating:self.game.rng.shuffle(self.ai_names)
-        self.history=[];self.step1_snapshot=None;self.thinking_actor=None
+        self.history=[];self.step1_snapshot=None;self.thinking_actor=None;self.thinking_view=None
         self.advance();return self.view()
     def ai(self,g):
         if self.difficulty=='beginner':return random_agent(g)
@@ -588,9 +588,13 @@ class Session:
         try:
             while not self.game.done and self.game.actor!=0:
                 self.thinking_actor=self.game.actor
+                # Publish a stable snapshot before the potentially expensive AI
+                # decision so the browser can paint the current roll immediately.
+                self.thinking_view=copy.deepcopy(self.view())
                 self.apply_action(self.ai(self.game),'ai')
         finally:
             self.thinking_actor=None
+            self.thinking_view=None
     def explanations(self):
         g=self.game;b=g.boards[g.actor]
         out=[]
