@@ -699,3 +699,17 @@ def test_row_close_dialog_explains_game_end_control_and_remaining_win_path():
         "scoreCeilingOutcome(scores,maxScores,0)",
     ):
         assert expected in html, expected
+
+
+def test_new_game_announces_first_roller():
+    html = html_source()
+    for expected in (
+        "function showFirstRollerDialog()",
+        "function closeFirstRollerDialog()",
+        "id='first-roller-modal'",
+        "🎲 First roller",
+        "Start game",
+        "showFirstRollerDialog()",
+        "state.roller===0?humanDialogName()",
+    ):
+        assert expected in html, expected
