@@ -698,3 +698,34 @@ def test_live_champion_does_not_depend_on_promoted_model(monkeypatch):
     monkeypatch.setattr(web,'live_champion',lambda game:expected)
 
     assert session.ai(session.game)==expected
+
+
+def test_ai_thinking_snapshot_exposes_current_roll_before_decision():
+    from qwixx_ai.core import Game
+    from qwixx_ai.web import Session
+
+    session=Session()
+    session.game=Game(seed=21)
+    original_dice=session.game.dice
+    session.game.active=1
+    session.game.phase=0
+    seen=[]
+
+    def fake_ai(game):
+        assert session.thinking_actor==game.actor
+        assert session.thinking_view is not None
+        seen.append((
+            tuple(session.thinking_view["dice"]),
+            session.thinking_view["roller"],
+            session.thinking_view["actor"],
+        ))
+        return None
+
+    session.ai=fake_ai
+    session.advance()
+
+    assert seen
+    assert seen[0][0]==tuple(original_dice)
+    assert seen[0][1]==1
+    assert session.thinking_view is None
+    assert session.thinking_actor is None
