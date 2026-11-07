@@ -674,3 +674,15 @@ def test_leaderboard_defaults_to_champion_and_separates_difficulties():
     assert "['','All difficulties']" not in leaderboard
     assert "results never mix across difficulty levels" in leaderboard
     assert "?difficulty='+encodeURIComponent(difficulty)" in leaderboard
+
+
+def test_thinking_progress_can_refresh_dice_before_ai_move_completes():
+    html = html_source()
+    for expected in (
+        "progress.state",
+        "const snapshot={...progress.state,session_id:sid}",
+        "const diceChanged=JSON.stringify(snapshot.dice)!==JSON.stringify(state.dice)",
+        "state=snapshot",
+        "thinkingActor!==progress.actor",
+    ):
+        assert expected in html, expected
