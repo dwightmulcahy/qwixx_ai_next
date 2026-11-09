@@ -688,17 +688,20 @@ def test_thinking_progress_can_refresh_dice_before_ai_move_completes():
         assert expected in html, expected
 
 
-def test_row_close_dialog_explains_game_end_control_and_remaining_win_path():
+def test_row_close_dialog_gives_one_clear_outcome_summary():
     html = html_source()
     for expected in (
-        "function remainingPlayerCanEndGameThisRoll(action)",
-        "No remaining player can end the game on this roll.",
-        "Closing this row will not immediately hand another player a second lock.",
-        "humanOutcome==='can still take 1st'?'win'",
-        "humanOutcome==='can still tie 1st'?'tie for 1st'",
+        "The game is already ending after this white-dice phase.",
+        "has clinched 1st.",
+        "This choice cannot change who wins.",
+        "Closing this row does not end the game this roll.",
+        "No remaining player can create the second lock on this roll.",
+        "scoreGain=afterScore-beforeScore",
         "scoreCeilingOutcome(scores,maxScores,0)",
     ):
         assert expected in html, expected
+    # Do not show the old contradictory warning when the game is already ending.
+    assert "No remaining player can end the game on this roll." not in html
 
 
 def test_new_game_announces_first_roller():
