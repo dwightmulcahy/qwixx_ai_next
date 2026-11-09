@@ -94,7 +94,7 @@ jobs:
           test "$check_conclusion" = success
 
       - name: Generate grouped conventional-commit changelog
-        uses: dwightmulcahy/repo-template/.github/actions/release-notes@15c05e1fc09a7c0ef835b773f1ae43871d902879
+        uses: dwightmulcahy/repo-template/.github/actions/release-notes@cf8e0cc9cf440098778de4684e3df2e3de2a305e
         with:
           tag: ${{ steps.version.outputs.tag }}
           project-name: Qwixx AI
@@ -144,13 +144,13 @@ jobs:
           exit 1
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Publish versioned Docker Hub image
-        uses: dwightmulcahy/repo-template/.github/actions/docker-publish@15c05e1fc09a7c0ef835b773f1ae43871d902879
+        uses: dwightmulcahy/repo-template/.github/actions/docker-publish@cf8e0cc9cf440098778de4684e3df2e3de2a305e
         with:
           context: .
           platforms: linux/amd64,linux/arm64
