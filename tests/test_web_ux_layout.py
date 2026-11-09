@@ -518,16 +518,16 @@ assert.equal(el("decision-modal").hidden,true);
 vm.runInContext("state.phase=state.boards.length;state.actor=0;state.roller=0;state.locks=['red'];state.white_locks=[];state.legal=[[1,12,true]];state.boards[0].rows[1]=[2,3,4,5,6];state.boards[1].rows[2]=[12,11,10,9,8,7,6,5,4];pending=[1,12,true];confirmPhase()",context);
 assert.equal(el("decision-modal").hidden,false);
 assert.match(el("decision-body").innerHTML,/second locked row/);
-assert.match(el("decision-body").innerHTML,/will end the game/);
+assert.match(el("decision-body").innerHTML,/ends the game/);
 assert.match(el("decision-body").innerHTML,/Projected final scores/);
-assert.match(el("decision-body").innerHTML,/would finish/);
+assert.match(el("decision-body").innerHTML,/finishes 2nd of 4/);
 vm.runInContext("cancelDecision()",context);
 
 // During an earlier white-dice decision, remaining players may still change the final scores.
 vm.runInContext("state.phase=0;state.actor=0;state.roller=0;state.dice=[6,6,1,1,1,1];state.locks=['red'];state.white_locks=[];state.legal=[[1,12,true]];state.boards[1].rows[1]=[2,3,4,5,6];pending=[1,12,true];confirmPhase()",context);
 assert.equal(el("decision-modal").hidden,false);
 const ceilingBody=el("decision-body").innerHTML;
-assert.match(ceilingBody,/highest possible final score/);
+assert.match(ceilingBody,/game will end after the remaining white-dice decisions/);
 assert.match(ceilingBody,/Possible final scores/);
 assert.match(ceilingBody,/→ \d+ max/);
 assert.match(ceilingBody,/can still (take|tie) 1st|1st clinched|at least T-1st|out of 1st/);
