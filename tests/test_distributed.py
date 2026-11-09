@@ -569,10 +569,10 @@ def test_lock_confirmation_warns_when_second_lock_would_end_game():
         "function projectedLockScores(action)",
         "function remainingWhiteCanChange(action)",
         "secondLock=newDistinct&&state.locks.length===1",
-        "This is the second locked row and will end the game.",
+        "This is the second locked row and ends the game.",
+        "This creates the second locked row, so the game will end after the remaining white-dice decisions.",
         "Projected final scores",
         "Possible final scores",
-        "highest possible final score for each player",
     ):
         assert expected in HTML, expected
     assert "window.confirm('Close this row?" not in HTML
