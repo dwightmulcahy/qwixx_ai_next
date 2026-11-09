@@ -259,7 +259,7 @@ def test_penalty_pass_and_lock_use_styled_confirmation_dialogs():
         "function projectedLockScores(action)", "function projectedLockMaxScores(action,scores=projectedLockScores(action))",
         "function projectedBoardScore(board,i,action,extraMark=null)", "function scoreCeilingOutcome(scores,maxScores,i)",
         "function remainingWhiteCanChange(action)", "Possible final scores", "Projected final scores",
-        "second locked row", "would finish", "highest possible final score",
+        "second locked row", "finishes '+humanRank+' of '+scores.length", "Possible final scores",
     ):
         assert expected in html, expected
     assert "window.confirm('Close this row?" not in html
@@ -295,8 +295,8 @@ def test_game_ending_lock_warning_accounts_for_remaining_white_decisions():
         "state.phase>=n-1",
         "remainingWhiteCanChange(action)",
         "projectedLockMaxScores(action,scores)",
-        "The table shows the highest possible final score for each player.",
-        "No remaining player has a legal white-dice mark, so these scores are final.",
+        "This creates the second locked row, so the game will end after the remaining white-dice decisions.",
+        "This is the second locked row and ends the game.",
     ):
         assert expected in html, expected
 
