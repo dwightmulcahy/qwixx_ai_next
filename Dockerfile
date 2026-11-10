@@ -9,9 +9,12 @@ ENV QWIXX_GIT_VERSION=${QWIXX_GIT_VERSION} \
     QWIXX_BUILD_DATE=${QWIXX_BUILD_DATE}
 WORKDIR /app
 COPY pyproject.toml README.md ./
-COPY qwixx_ai/ ./qwixx_ai/
+# Dependencies (torch, numpy) first, from pyproject only, so a source change reuses this layer
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+    python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/deps.txt && \
+    pip install --no-cache-dir -r /tmp/deps.txt && rm /tmp/deps.txt
+COPY qwixx_ai/ ./qwixx_ai/
+RUN pip install --no-cache-dir --no-deps .
 RUN mkdir -p /app/runs && chown -R 10001:10001 /app
 USER 10001:10001
 EXPOSE 8765
