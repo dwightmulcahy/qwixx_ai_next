@@ -108,3 +108,41 @@ def test_live_champion_requires_win_share_and_score_improvement(monkeypatch):
 
     monkeypatch.setattr(champion_module, "outcome", fake_outcome)
     assert live_champion(game, budget_ms=2000, max_futures=2) == incumbent
+
+
+def test_live_champion_skip_and_environment_clamps(monkeypatch):
+    game = Game(seed=41)
+    incumbent = game.legal()[0] if game.legal() else None
+    monkeypatch.setattr(champion_module, "_live_incumbent", lambda game: incumbent)
+    monkeypatch.setattr(champion_module, "_live_should_search", lambda game, incumbent: False)
+    stats = {}
+    assert live_champion(game, stats=stats) == incumbent
+    assert stats == {"searched": False, "futures": 0, "elapsed_ms": 0.0, "overridden": False}
+
+    monkeypatch.setattr(champion_module, "_live_should_search", lambda game, incumbent: True)
+    monkeypatch.setenv("QWIXX_LIVE_CHAMPION_BUDGET_MS", "99999")
+    monkeypatch.setenv("QWIXX_LIVE_CHAMPION_MAX_FUTURES", "999")
+    monkeypatch.setattr(champion_module, "outcome", lambda game, action, seed: (0.0, 0.0))
+    stats = {}
+    live_champion(game, stats=stats)
+    assert stats["budget_ms"] == 2000.0
+    assert stats["max_futures"] == 32
+
+
+def test_live_should_search_non_four_done_no_legal_and_penalty(monkeypatch):
+    three = Game(n=3, seed=42)
+    assert champion_module._live_should_search(three, None) is False
+
+    done = Game(seed=43)
+    done.locks = {0, 1}
+    done.phase = done.n
+    assert champion_module._live_should_search(done, None) is False
+
+    game = Game(seed=44)
+    monkeypatch.setattr(game, "legal", lambda: [])
+    assert champion_module._live_should_search(game, None) is False
+
+    penalty = Game(seed=45)
+    penalty.phase = penalty.n
+    penalty.active_marks = 0
+    assert champion_module._live_should_search(penalty, heuristic_v2(penalty)) is True
