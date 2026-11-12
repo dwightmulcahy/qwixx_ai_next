@@ -930,3 +930,95 @@ def test_runtime_search_validation_and_override_paths(monkeypatch):
     assert policy(game) == challenger
     assert stats["decisions"] == 1
     assert stats["override"] == 1
+
+
+def test_runtime_session_error_and_difficulty_branches(monkeypatch):
+    from qwixx_ai import web
+    from qwixx_ai.core import Game
+
+    with pytest.raises(ValueError, match="Invalid difficulty"):
+        web.Session(difficulty="impossible")
+
+    session = web.Session(difficulty="beginner")
+    beginner = ("red", 2, False)
+    monkeypatch.setattr(web, "random_agent", lambda game: beginner)
+    assert session.ai(session.game) == beginner
+
+    session.difficulty = "intermediate"
+    intermediate = ("yellow", 2, False)
+    monkeypatch.setattr(web, "heuristic", lambda game: intermediate)
+    assert session.ai(session.game) == intermediate
+
+    session.difficulty = "champion"
+    champion = ("green", 12, False)
+    monkeypatch.setattr(web, "live_champion", lambda game: champion)
+    assert session.ai(session.game) == champion
+
+    session.difficulty = "advanced"
+    session.model = None
+    fallback = ("blue", 12, False)
+    monkeypatch.setattr(web, "heuristic_v2", lambda game: fallback)
+    assert session.ai(session.game) == fallback
+
+    model = object()
+    session.model = model
+    chosen = ("red", 3, False)
+    monkeypatch.setattr(
+        web, "choose",
+        lambda selected_model, game, epsilon: chosen
+        if selected_model is model and epsilon == 0.18 else None,
+    )
+    assert session.ai(session.game) == chosen
+
+    with pytest.raises(ValueError, match="optimal_first_roll must be boolean"):
+        session.reset_game("yes")
+    with pytest.raises(ValueError, match="randomize_seating must be boolean"):
+        session.reset_game(False, "yes")
+
+    done = Game(seed=22)
+    done.done = True
+    session.game = done
+    with pytest.raises(ValueError, match="already finished"):
+        session.apply_action(None, "human")
+
+    ai_turn = Game(seed=23)
+    ai_turn.active = 1
+    ai_turn.phase = 0
+    session.game = ai_turn
+    with pytest.raises(ValueError, match="Not the human player turn"):
+        session.apply_action(None, "human")
+
+    human_turn = Game(seed=24)
+    human_turn.active = 0
+    human_turn.phase = 0
+    session.game = human_turn
+    with pytest.raises(ValueError, match="AI cannot act for human"):
+        session.apply_action(None, "ai")
+
+    session.step1_snapshot = None
+    with pytest.raises(ValueError, match="Step 1 cannot be undone"):
+        session.undo_step1()
+
+
+def test_runtime_opening_helpers_and_history_trimming(monkeypatch):
+    from qwixx_ai import web
+    from qwixx_ai.core import Game
+
+    game = Game(seed=31)
+    game.rng.seed(7)
+    assert 0 <= web.randomize_starting_player(game).active < game.n
+
+    monkeypatch.setattr(web, "opening_supports_two_edge_marks", lambda game: False)
+    with pytest.raises(RuntimeError, match="Unable to find an optimal opening roll"):
+        web.optimal_opening_game(max_attempts=2, randomize_seating=False)
+
+    normal = web.new_play_game(False, False)
+    assert normal.active == 0
+
+    session = web.Session(difficulty="intermediate")
+    session.game = Game(seed=32)
+    session.history = [{"n": i} for i in range(200)]
+    action = session.game.legal()[0] if session.game.legal() else None
+    session.apply_action(action, "human")
+    assert len(session.history) == 200
+    assert session.history[-1]["source"] == "human"
