@@ -21,3 +21,31 @@ line-length=100
 [tool.ruff.lint]
 select=['F']
 ignore=[]
+
+
+# Coverage is intentionally scoped to deployed/runtime code. Historical
+# experiment, audit, benchmark, and offline training scripts remain available
+# for reproducibility but do not define production coverage quality.
+[tool.coverage.run]
+branch = true
+source = ["qwixx_ai"]
+omit = [
+  "qwixx_ai/phase*.py",
+  "qwixx_ai/*_benchmark.py",
+  "qwixx_ai/*_audit.py",
+  "qwixx_ai/*_experiment.py",
+  "qwixx_ai/controlled_strategy.py",
+  "qwixx_ai/decision_quality.py",
+  "qwixx_ai/decision_quality_heldout.py",
+  "qwixx_ai/league.py",
+  "qwixx_ai/position_value.py",
+  "qwixx_ai/rollout_agent.py",
+  "qwixx_ai/row_change_experiment.py",
+  "qwixx_ai/search_*.py",
+  "qwixx_ai/strategy_tournament.py",
+  "qwixx_ai/train.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
