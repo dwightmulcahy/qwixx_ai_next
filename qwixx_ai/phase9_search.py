@@ -5,62 +5,11 @@ candidate actions. The focal player alone searches; simulated continuations
 use a frozen non-recursive hybrid rollout policy for every seat. This is a search policy, not a trained checkpoint.
 """
 import argparse
-import hashlib
 import json
-import random
 
 from .controlled_strategy import paired_compare
 from .heuristic_v2 import heuristic_v2
-from .rollout_policy import rollout_policy
-
-
-def state_seed(game, seed):
-    """Stable seed independent of Python's randomized hash or game RNG state."""
-    payload = (
-        seed, game.turn, game.phase, game.active, game.active_marks,
-        tuple(game.dice), tuple(sorted(game.locks)),
-        tuple(sorted(game.white_locks)),
-        tuple((tuple(tuple(row) for row in board.rows), board.penalties)
-              for board in game.boards),
-    )
-    return int.from_bytes(
-        hashlib.blake2b(repr(payload).encode(), digest_size=8).digest(),
-        "big",
-    )
-
-
-def outcome(game, action, future_seed):
-    trial = game.clone()
-    seat = trial.actor
-    trial.rng = random.Random(future_seed)
-    trial.step(action)
-    while not trial.done:
-        trial.step(rollout_policy(trial))
-    scores = trial.scores()
-    best = max(scores)
-    share = (1 / sum(score == best for score in scores)
-             if scores[seat] == best else 0.0)
-    return share, scores[seat]
-
-
-def evaluate_actions(game, futures=16, seed=900000):
-    """Evaluate legal marks AND pass using common future seeds."""
-    if futures < 1:
-        raise ValueError("futures must be positive")
-    if game.done:
-        raise ValueError("cannot search a finished game")
-    actions = [None, *game.legal()]
-    rng = random.Random(state_seed(game, seed))
-    seeds = [rng.randrange(2**64) for _ in range(futures)]
-    results = []
-    for action in actions:
-        samples = [outcome(game, action, future) for future in seeds]
-        results.append({
-            "action": action,
-            "win_share": sum(s[0] for s in samples) / futures,
-            "mean_score": sum(s[1] for s in samples) / futures,
-        })
-    return results
+from .runtime_search import evaluate_actions, outcome, state_seed
 
 
 def search(game, futures=16, seed=900000, min_gain=0.0):
