@@ -1144,3 +1144,126 @@ def test_new_session_expires_stale_sessions_and_checks_player(tmp_path, monkeypa
         assert result["session_id"] in coord.sessions
     finally:
         coord.db.close()
+
+
+def test_learn_executes_optimizer_and_updates_priorities(tmp_path, monkeypatch):
+    import numpy as np
+    from qwixx_ai import distributed
+    from qwixx_ai.core import Game
+    from qwixx_ai.env import observe, mask
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        game = Game(seed=111)
+        state = observe(game).copy()
+        next_state = observe(game).copy()
+        next_mask = mask(game).copy()
+        sample = (state, 0, 0.25, next_state, False, next_mask)
+        coord._add_transitions([sample] * 300)
+        before = list(coord.priorities)
+        coord.learn()
+        assert coord.updates == 1
+        assert coord.last_loss is not None
+        assert any(a != b for a, b in zip(before, coord.priorities))
+    finally:
+        coord.db.close()
+
+
+def test_forced_checkpoint_evaluates_existing_champion_without_promotion(tmp_path, monkeypatch):
+    import copy
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        coord.best_model = copy.deepcopy(coord.model).eval()
+        coord.best = 0.50
+        coord.league.clear()
+        monkeypatch.setattr(
+            distributed,
+            "evaluate",
+            lambda model, games, seed: {"win_share": 0.50, "mean_score": 60.0},
+        )
+        old_version = coord.version
+        assert coord.checkpoint(force=True) is True
+        assert coord.version == old_version + 1
+        assert coord.best == 0.50
+        assert coord.last_eval["champion_win_share"] == 0.50
+        assert len(coord.league) == 0
+        assert (tmp_path / "latest.pt").exists()
+        assert (tmp_path / "trainer.pt").exists()
+        assert coord.log.exists()
+    finally:
+        coord.db.close()
+
+
+def test_authenticated_http_stats_and_auth_routes(tmp_path, monkeypatch):
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    monkeypatch.setattr(coord.player_stats, "authenticate", lambda token: "player-1")
+    monkeypatch.setattr(coord.player_stats, "profile", lambda pid: {"id": pid, "name": "Dwight"})
+    monkeypatch.setattr(coord.player_stats, "stats", lambda pid, difficulty: {"player_id": pid, "difficulty": difficulty})
+    monkeypatch.setattr(coord.player_stats, "ai_stats", lambda difficulty: {"difficulty": difficulty, "games": 3})
+    monkeypatch.setattr(coord.player_stats, "leaderboard", lambda difficulty: {"difficulty": difficulty, "leaders": []})
+    monkeypatch.setattr(coord.player_stats, "request_code", lambda email, name: {"sent": True, "email": email, "name": name})
+    monkeypatch.setattr(
+        coord.player_stats,
+        "verify_code",
+        lambda email, code: {"token": "session-token", "player": {"id": "player-1", "email": email}},
+    )
+    logged_out = []
+    monkeypatch.setattr(coord.player_stats, "logout", lambda token: logged_out.append(token))
+
+    class TestHandler(distributed.Handler):
+        def log_message(self, *args):
+            pass
+
+    TestHandler.coord = coord
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+
+    def get(path):
+        req = urllib.request.Request(base + path, headers={"Cookie": "qwixx_auth=abc"})
+        return urllib.request.urlopen(req, timeout=5)
+
+    def post(path, payload):
+        req = urllib.request.Request(
+            base + path,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "Cookie": "qwixx_auth=abc"},
+        )
+        return urllib.request.urlopen(req, timeout=5)
+
+    try:
+        with get("/api/auth/me") as response:
+            assert json.load(response)["player"]["id"] == "player-1"
+        with get("/api/player-stats?difficulty=champion") as response:
+            assert json.load(response)["difficulty"] == "champion"
+        with get("/api/ai-stats?difficulty=advanced") as response:
+            assert json.load(response)["games"] == 3
+        with get("/api/leaderboard?difficulty=champion") as response:
+            assert json.load(response)["leaders"] == []
+
+        with post("/api/auth/request", {"email": "d@example.com", "name": "Dwight"}) as response:
+            assert json.load(response)["sent"] is True
+        with post("/api/auth/verify", {"email": "d@example.com", "code": "123456"}) as response:
+            body = json.load(response)
+            assert body["player"]["id"] == "player-1"
+            assert "qwixx_auth=session-token" in response.headers["Set-Cookie"]
+        with post("/api/auth/logout", {}) as response:
+            assert response.status == 200
+        assert logged_out == ["abc"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        coord.db.close()
