@@ -49,3 +49,10 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+# Process-entrypoint wrappers are validated by Docker/browser integration jobs.
+# The runtime coverage metric focuses on reusable production logic.
+exclude_also = [
+  "def main\\(",
+  "def serve\\(",
+  "if __name__ == ['\"]__main__['\"]:",
+]
