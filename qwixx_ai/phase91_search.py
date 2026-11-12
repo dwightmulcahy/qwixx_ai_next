@@ -9,57 +9,7 @@ import json
 
 from .controlled_strategy import paired_compare
 from .heuristic_v2 import heuristic_v2
-from .phase9_search import evaluate_actions
-
-
-def eligible(game, teacher, start_turn=12, end_turn=35):
-    """Avoid low-choice and early/late states where search is costly or noisy."""
-    return (
-        not game.done
-        and start_turn <= game.turn < end_turn
-        and teacher is not None
-        and len(game.legal()) >= 2
-    )
-
-
-def decide(game, futures=32, seed=900000, min_gain=0.10,
-           min_score_gain=0.0, start_turn=12, end_turn=35):
-    """Return (action, reason); never override without both safeguards."""
-    if futures < 1 or min_gain < 0 or min_score_gain < 0:
-        raise ValueError("invalid search parameters")
-    if not 0 <= start_turn < end_turn:
-        raise ValueError("invalid turn window")
-    teacher = heuristic_v2(game)
-    if not eligible(game, teacher, start_turn, end_turn):
-        return teacher, "v2_not_eligible"
-    estimates = evaluate_actions(game, futures=futures, seed=seed)
-    baseline = next(item for item in estimates if item["action"] == teacher)
-    viable = [
-        item for item in estimates
-        if item["action"] != teacher
-        and item["win_share"] >= baseline["win_share"] + min_gain
-        and item["mean_score"] >= baseline["mean_score"] + min_score_gain
-    ]
-    if not viable:
-        return teacher, "v2_safeguard"
-    best = max(viable, key=lambda item: (
-        item["win_share"], item["mean_score"],
-    ))
-    return best["action"], "override"
-
-
-def policy(futures=32, seed=900000, min_gain=0.10,
-           min_score_gain=0.0, start_turn=12, end_turn=35, stats=None):
-    def act(game):
-        action, reason = decide(
-            game, futures, seed, min_gain, min_score_gain,
-            start_turn, end_turn,
-        )
-        if stats is not None:
-            stats["decisions"] += 1
-            stats[reason] += 1
-        return action
-    return act
+from .runtime_search import decide, eligible, policy
 
 
 def validate(rounds=25, seed=992000, futures=32, search_seed=900000,
