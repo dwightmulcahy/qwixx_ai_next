@@ -899,7 +899,8 @@ def test_runtime_search_validation_and_override_paths(monkeypatch):
         runtime_search.evaluate_actions(game, futures=0)
 
     finished = Game(seed=18)
-    finished.done = True
+    finished.locks = {0, 1}
+    finished.phase = finished.n
     with pytest.raises(ValueError, match="finished game"):
         runtime_search.evaluate_actions(finished)
 
