@@ -68,12 +68,21 @@ jobs:
           cache: pip
       - run: python -m pip install -e '.[dev]'
       - run: python -m compileall -q qwixx_ai tests
-      - run: python -m pytest -q --junitxml=all-tests.xml
+      - name: Run tests with branch coverage
+        run: |
+          python -m pytest -q \
+            --cov=qwixx_ai \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --junitxml=all-tests.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: full-suite-results
-          path: all-tests.xml
+          path: |
+            all-tests.xml
+            coverage.xml
           if-no-files-found: ignore
   compose:
     name: Validate Compose configurations
