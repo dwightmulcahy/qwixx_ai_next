@@ -9,7 +9,7 @@ import json
 
 from .controlled_strategy import paired_compare
 from .heuristic_v2 import heuristic_v2
-from .runtime_search import decide, eligible, policy
+from .runtime_search import decide as decide, eligible as eligible, policy
 
 
 def validate(rounds=25, seed=992000, futures=32, search_seed=900000,
