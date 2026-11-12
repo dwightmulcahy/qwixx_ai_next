@@ -9,7 +9,7 @@ import json
 
 from .controlled_strategy import paired_compare
 from .heuristic_v2 import heuristic_v2
-from .runtime_search import evaluate_actions, outcome, state_seed
+from .runtime_search import (evaluate_actions, outcome as outcome, state_seed as state_seed)
 
 
 def search(game, futures=16, seed=900000, min_gain=0.0):
