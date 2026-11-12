@@ -1024,3 +1024,123 @@ def test_runtime_opening_helpers_and_history_trimming(monkeypatch):
     session.apply_action(action, "human")
     assert len(session.history) == 200
     assert session.history[-1]["source"] == "human"
+
+
+def test_training_opponent_sampling_and_action_routes(tmp_path, monkeypatch):
+    from qwixx_ai import distributed
+    from qwixx_ai.core import Game
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        sentinel_best = object()
+        sentinel_league = object()
+        coord.best_model = sentinel_best
+        coord.league.clear()
+        coord.league.append(sentinel_league)
+
+        for roll, expected in (
+            (0.10, ("best", sentinel_best)),
+            (0.50, ("league", sentinel_league)),
+            (0.80, ("rollout", None)),
+            (0.99, ("heuristic", None)),
+        ):
+            monkeypatch.setattr(coord.rng, "random", lambda value=roll: value)
+            monkeypatch.setattr(coord.rng, "choice", lambda values: values[0])
+            assert coord._sample_training_opponent() == expected
+
+        game = Game(seed=101)
+        monkeypatch.setattr(distributed, "choose", lambda model, game, epsilon=0: ("choose", epsilon))
+        monkeypatch.setattr(distributed, "rollout_policy", lambda game: ("rollout", 0))
+        monkeypatch.setattr(distributed, "heuristic_v2", lambda game: ("heuristic", 0))
+
+        current = coord._training_action(("current", object()), game)
+        assert current[0] == "choose"
+        assert current[1] == coord.exploration()
+        assert coord._training_action(("best", object()), game) == ("choose", 0.04)
+        assert coord._training_action(("league", object()), game) == ("choose", 0.04)
+        assert coord._training_action(("rollout", None), game) == ("rollout", 0)
+        assert coord._training_action(("heuristic", None), game) == ("heuristic", 0)
+    finally:
+        coord.db.close()
+
+
+def test_ticket_cleanup_limit_history_and_stats(tmp_path, monkeypatch):
+    import time
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        coord.pending["old"] = (1, time.time() - 901)
+        ticket = coord.ticket()
+        assert "old" not in coord.pending
+        assert ticket["policy_version"] == coord.version
+
+        monkeypatch.setattr(distributed, "MAX_PENDING", 1)
+        coord.pending = {"full": (1, time.time())}
+        with pytest.raises(ValueError, match="Too many outstanding tickets"):
+            coord.ticket()
+
+        with coord.lock:
+            coord._record("browser", [1, 2, 3, 4], None, 7)
+        assert len(coord.history(0)) == 1
+        assert len(coord.history(9999)) == 1
+        stats = coord.stats()
+        assert stats["database_games"] == 1
+        assert stats["sessions"] == 0
+        assert stats["league_size"] == len(coord.league)
+    finally:
+        coord.db.close()
+
+
+def test_accept_rejects_bad_codes_and_incomplete_game(tmp_path, monkeypatch):
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        for moves, message in (
+            ([89], "Invalid move code"),
+            ([-1], "Invalid move code"),
+            ([1.5], "Invalid move code"),
+            ([], "Incomplete game"),
+        ):
+            ticket = coord.ticket()
+            with pytest.raises(ValueError, match=message):
+                coord.accept({"ticket": ticket["ticket"], "moves": moves})
+    finally:
+        coord.db.close()
+
+
+def test_checkpoint_skips_recent_live_session(tmp_path, monkeypatch):
+    import time
+    from qwixx_ai import distributed
+    from qwixx_ai.web import Session
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    monkeypatch.setenv("QWIXX_CHECKPOINT_IDLE_SECONDS", "120")
+    coord = distributed.Coordinator()
+    try:
+        coord.sessions["live"] = (Session(difficulty="intermediate"), time.time(), None)
+        assert coord.checkpoint(force=False) is False
+    finally:
+        coord.db.close()
+
+
+def test_new_session_expires_stale_sessions_and_checks_player(tmp_path, monkeypatch):
+    import time
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        coord.sessions["stale"] = (object(), time.time() - 90000, None)
+        seen = []
+        monkeypatch.setattr(coord.player_stats, "profile", lambda player_id: seen.append(player_id) or {"id": player_id})
+        result = coord.new_session("intermediate", player_id="player-1", randomize_seating=False)
+        assert "stale" not in coord.sessions
+        assert seen == ["player-1"]
+        assert result["session_id"] in coord.sessions
+    finally:
+        coord.db.close()
