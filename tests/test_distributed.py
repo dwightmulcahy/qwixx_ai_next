@@ -977,7 +977,8 @@ def test_runtime_session_error_and_difficulty_branches(monkeypatch):
         session.reset_game(False, "yes")
 
     done = Game(seed=22)
-    done.done = True
+    done.locks = {0, 1}
+    done.phase = done.n
     session.game = done
     with pytest.raises(ValueError, match="already finished"):
         session.apply_action(None, "human")
