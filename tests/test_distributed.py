@@ -1147,7 +1147,6 @@ def test_new_session_expires_stale_sessions_and_checks_player(tmp_path, monkeypa
 
 
 def test_learn_executes_optimizer_and_updates_priorities(tmp_path, monkeypatch):
-    import numpy as np
     from qwixx_ai import distributed
     from qwixx_ai.core import Game
     from qwixx_ai.env import observe, mask
