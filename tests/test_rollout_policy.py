@@ -15,16 +15,16 @@ def test_rollout_policy_falls_back_to_v2_for_other_player_counts():
     assert rollout_policy(game)==heuristic_v2(game)
 
 
-def test_search_outcome_uses_rollout_policy(monkeypatch):
-    from qwixx_ai import phase9_search
+def test_runtime_search_outcome_uses_rollout_policy(monkeypatch):
+    from qwixx_ai import runtime_search
     game=Game(seed=19)
     calls={"count":0}
-    original=phase9_search.rollout_policy
+    original=runtime_search.rollout_policy
 
     def counted(trial):
         calls["count"]+=1
         return original(trial)
 
-    monkeypatch.setattr(phase9_search,"rollout_policy",counted)
-    phase9_search.outcome(game,None,12345)
+    monkeypatch.setattr(runtime_search,"rollout_policy",counted)
+    runtime_search.outcome(game,None,12345)
     assert calls["count"]>0
