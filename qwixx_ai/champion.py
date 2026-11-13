@@ -5,8 +5,7 @@ import time
 
 from .frozen_row_policy import row_change_only
 from .heuristic_v2 import heuristic_v2
-from .phase9_search import outcome, state_seed
-from .phase91_search import policy
+from .runtime_search import outcome, policy, state_seed
 
 SETTINGS = dict(
     futures=32, seed=900000, min_gain=0.10, min_score_gain=0.0,

@@ -729,3 +729,540 @@ def test_ai_thinking_snapshot_exposes_current_roll_before_decision():
     assert seen[0][1]==1
     assert session.thinking_view is None
     assert session.thinking_actor is None
+
+
+def test_runtime_http_routes_cover_success_and_error_paths(tmp_path, monkeypatch):
+    import json
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    monkeypatch.setattr(distributed, "BROWSER_TRAINING_ENABLED", False)
+    monkeypatch.setattr(distributed, "ADMIN_TOKEN", "admin-secret")
+    coord = distributed.Coordinator()
+
+    class TestHandler(distributed.Handler):
+        def log_message(self, *args):
+            pass
+
+    TestHandler.coord = coord
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+
+    def get(path, headers=None):
+        return urllib.request.urlopen(
+            urllib.request.Request(base + path, headers=headers or {}), timeout=5
+        )
+
+    def post(path, payload=None, headers=None):
+        body = json.dumps(payload if payload is not None else {}).encode()
+        merged = {"Content-Type": "application/json", **(headers or {})}
+        return urllib.request.urlopen(
+            urllib.request.Request(base + path, data=body, headers=merged), timeout=5
+        )
+
+    try:
+        with get("/health") as response:
+            assert json.load(response) == {"healthy": True}
+        with get("/api/stats") as response:
+            assert "model_version" in json.load(response)
+        with get("/api/history?limit=bogus") as response:
+            assert json.load(response)["games"] == []
+        with get("/api/auth/me") as response:
+            assert json.load(response) == {"player": None}
+        with get("/api/policy") as response:
+            assert "observation_size" in json.load(response)
+        with get("/favicon.svg") as response:
+            assert response.headers["Content-Type"] == "image/svg+xml"
+        with get("/") as response:
+            assert "Browser training disabled" in response.read().decode()
+        with get("/training") as response:
+            assert "Browser training disabled" in response.read().decode()
+
+        for path in ("/worker.js", "/api/job"):
+            with pytest.raises(urllib.error.HTTPError) as err:
+                get(path)
+            assert err.value.code == 403
+
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get("/api/player-stats")
+        assert err.value.code == 401
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get("/api/session-progress?session_id=missing")
+        assert err.value.code == 404
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get("/does-not-exist")
+        assert err.value.code == 404
+
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post("/api/admin", {"command": "pause"})
+        assert err.value.code == 403
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post("/api/admin", {"command": "unknown"},
+                 {"X-Admin-Token": "admin-secret"})
+        assert err.value.code == 400
+
+        for payload in (
+            {"guest": "yes"},
+            {"guest": True, "optimal_first_roll": "yes"},
+            {"guest": True, "randomize_seating": "yes"},
+        ):
+            with pytest.raises(urllib.error.HTTPError) as err:
+                post("/reset", payload)
+            assert err.value.code == 400
+
+        with post("/reset", {
+            "guest": True,
+            "difficulty": "intermediate",
+            "optimal_first_roll": False,
+            "randomize_seating": False,
+        }) as response:
+            session = json.load(response)
+        assert session["session_id"]
+        assert session["difficulty"] == "intermediate"
+
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post("/move", {
+                "session_id": "missing",
+                "action": None,
+                "expected_turn": 0,
+                "expected_phase": 0,
+            })
+        assert err.value.code == 400
+
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post("/not-a-route", {})
+        assert err.value.code == 404
+
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post("/api/submit", {"ticket": "x", "moves": []})
+        assert err.value.code == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        coord.db.close()
+
+
+def test_runtime_coordinator_session_and_ticket_error_paths(tmp_path, monkeypatch):
+    import time
+
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        ticket = coord.ticket()
+        assert ticket["max_moves"] == 1000
+        coord.pending[ticket["ticket"]] = (ticket["seed"], time.time() - 901)
+        with pytest.raises(ValueError, match="Expired or unknown ticket"):
+            coord.accept({"ticket": ticket["ticket"], "moves": []})
+
+        with pytest.raises(ValueError, match="Invalid submission"):
+            coord.accept({"ticket": 123, "moves": []})
+        with pytest.raises(ValueError, match="Invalid submission"):
+            coord.accept({"ticket": "x", "moves": "bad"})
+
+        session = coord.new_session("intermediate", randomize_seating=False)
+        sid = session["session_id"]
+        current = coord.sessions[sid][0].game
+        with pytest.raises(ValueError, match="Game state changed"):
+            coord.session_action(sid, None, expected_turn=current.turn + 1)
+        with pytest.raises(ValueError, match="Step already advanced"):
+            coord.session_action(sid, None, expected_phase=current.phase + 1)
+        with pytest.raises(ValueError, match="Session expired"):
+            coord.session_action("missing", None)
+        with pytest.raises(ValueError, match="Session expired"):
+            coord.session_undo_step1("missing", 0, 0)
+        with pytest.raises(ValueError, match="Game state changed"):
+            coord.session_undo_step1(sid, None, current.phase)
+
+        exported = coord.policy_export()
+        assert exported["version"] == coord.version
+        assert exported["observation_size"] == coord.obs_size
+    finally:
+        coord.db.close()
+
+
+def test_runtime_search_validation_and_override_paths(monkeypatch):
+    from qwixx_ai import runtime_search
+    from qwixx_ai.core import Game
+
+    game = Game(seed=17)
+    with pytest.raises(ValueError, match="futures must be positive"):
+        runtime_search.evaluate_actions(game, futures=0)
+
+    finished = Game(seed=18)
+    finished.locks = {0, 1}
+    finished.phase = finished.n
+    with pytest.raises(ValueError, match="finished game"):
+        runtime_search.evaluate_actions(finished)
+
+    with pytest.raises(ValueError, match="invalid search parameters"):
+        runtime_search.decide(game, futures=0)
+    with pytest.raises(ValueError, match="invalid turn window"):
+        runtime_search.decide(game, start_turn=20, end_turn=10)
+
+    teacher = ("red", 2, False)
+    monkeypatch.setattr(runtime_search, "heuristic_v2", lambda g: teacher)
+    monkeypatch.setattr(runtime_search, "eligible", lambda *args, **kwargs: False)
+    assert runtime_search.decide(game)[0] == teacher
+
+    monkeypatch.setattr(runtime_search, "eligible", lambda *args, **kwargs: True)
+    challenger = ("yellow", 2, False)
+    monkeypatch.setattr(
+        runtime_search,
+        "evaluate_actions",
+        lambda *args, **kwargs: [
+            {"action": teacher, "win_share": 0.4, "mean_score": 50},
+            {"action": challenger, "win_share": 0.6, "mean_score": 55},
+        ],
+    )
+    assert runtime_search.decide(game)[0] == challenger
+
+    stats = {"decisions": 0, "v2_not_eligible": 0, "v2_safeguard": 0, "override": 0}
+    policy = runtime_search.policy(stats=stats)
+    assert policy(game) == challenger
+    assert stats["decisions"] == 1
+    assert stats["override"] == 1
+
+
+def test_runtime_session_error_and_difficulty_branches(monkeypatch):
+    from qwixx_ai import web
+    from qwixx_ai.core import Game
+
+    with pytest.raises(ValueError, match="Invalid difficulty"):
+        web.Session(difficulty="impossible")
+
+    session = web.Session(difficulty="beginner")
+    beginner = ("red", 2, False)
+    monkeypatch.setattr(web, "random_agent", lambda game: beginner)
+    assert session.ai(session.game) == beginner
+
+    session.difficulty = "intermediate"
+    intermediate = ("yellow", 2, False)
+    monkeypatch.setattr(web, "heuristic", lambda game: intermediate)
+    assert session.ai(session.game) == intermediate
+
+    session.difficulty = "champion"
+    champion = ("green", 12, False)
+    monkeypatch.setattr(web, "live_champion", lambda game: champion)
+    assert session.ai(session.game) == champion
+
+    session.difficulty = "advanced"
+    session.model = None
+    fallback = ("blue", 12, False)
+    monkeypatch.setattr(web, "heuristic_v2", lambda game: fallback)
+    assert session.ai(session.game) == fallback
+
+    model = object()
+    session.model = model
+    chosen = ("red", 3, False)
+    monkeypatch.setattr(
+        web, "choose",
+        lambda selected_model, game, epsilon: chosen
+        if selected_model is model and epsilon == 0.18 else None,
+    )
+    assert session.ai(session.game) == chosen
+
+    with pytest.raises(ValueError, match="optimal_first_roll must be boolean"):
+        session.reset_game("yes")
+    with pytest.raises(ValueError, match="randomize_seating must be boolean"):
+        session.reset_game(False, "yes")
+
+    done = Game(seed=22)
+    done.locks = {0, 1}
+    done.phase = done.n
+    session.game = done
+    with pytest.raises(ValueError, match="already finished"):
+        session.apply_action(None, "human")
+
+    ai_turn = Game(seed=23)
+    ai_turn.active = 1
+    ai_turn.phase = 0
+    session.game = ai_turn
+    with pytest.raises(ValueError, match="Not the human player turn"):
+        session.apply_action(None, "human")
+
+    human_turn = Game(seed=24)
+    human_turn.active = 0
+    human_turn.phase = 0
+    session.game = human_turn
+    with pytest.raises(ValueError, match="AI cannot act for human"):
+        session.apply_action(None, "ai")
+
+    session.step1_snapshot = None
+    with pytest.raises(ValueError, match="Step 1 cannot be undone"):
+        session.undo_step1()
+
+
+def test_runtime_opening_helpers_and_history_trimming(monkeypatch):
+    from qwixx_ai import web
+    from qwixx_ai.core import Game
+
+    game = Game(seed=31)
+    game.rng.seed(7)
+    assert 0 <= web.randomize_starting_player(game).active < game.n
+
+    monkeypatch.setattr(web, "opening_supports_two_edge_marks", lambda game: False)
+    with pytest.raises(RuntimeError, match="Unable to find an optimal opening roll"):
+        web.optimal_opening_game(max_attempts=2, randomize_seating=False)
+
+    normal = web.new_play_game(False, False)
+    assert normal.active == 0
+
+    session = web.Session(difficulty="intermediate")
+    session.game = Game(seed=32)
+    session.history = [{"n": i} for i in range(200)]
+    action = session.game.legal()[0] if session.game.legal() else None
+    session.apply_action(action, "human")
+    assert len(session.history) == 200
+    assert session.history[-1]["source"] == "human"
+
+
+def test_training_opponent_sampling_and_action_routes(tmp_path, monkeypatch):
+    from qwixx_ai import distributed
+    from qwixx_ai.core import Game
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        sentinel_best = object()
+        sentinel_league = object()
+        coord.best_model = sentinel_best
+        coord.league.clear()
+        coord.league.append(sentinel_league)
+
+        for roll, expected in (
+            (0.10, ("best", sentinel_best)),
+            (0.50, ("league", sentinel_league)),
+            (0.80, ("rollout", None)),
+            (0.99, ("heuristic", None)),
+        ):
+            monkeypatch.setattr(coord.rng, "random", lambda value=roll: value)
+            monkeypatch.setattr(coord.rng, "choice", lambda values: values[0])
+            assert coord._sample_training_opponent() == expected
+
+        game = Game(seed=101)
+        monkeypatch.setattr(distributed, "choose", lambda model, game, epsilon=0: ("choose", epsilon))
+        monkeypatch.setattr(distributed, "rollout_policy", lambda game: ("rollout", 0))
+        monkeypatch.setattr(distributed, "heuristic_v2", lambda game: ("heuristic", 0))
+
+        current = coord._training_action(("current", object()), game)
+        assert current[0] == "choose"
+        assert current[1] == coord.exploration()
+        assert coord._training_action(("best", object()), game) == ("choose", 0.04)
+        assert coord._training_action(("league", object()), game) == ("choose", 0.04)
+        assert coord._training_action(("rollout", None), game) == ("rollout", 0)
+        assert coord._training_action(("heuristic", None), game) == ("heuristic", 0)
+    finally:
+        coord.db.close()
+
+
+def test_ticket_cleanup_limit_history_and_stats(tmp_path, monkeypatch):
+    import time
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        coord.pending["old"] = (1, time.time() - 901)
+        ticket = coord.ticket()
+        assert "old" not in coord.pending
+        assert ticket["policy_version"] == coord.version
+
+        monkeypatch.setattr(distributed, "MAX_PENDING", 1)
+        coord.pending = {"full": (1, time.time())}
+        with pytest.raises(ValueError, match="Too many outstanding tickets"):
+            coord.ticket()
+
+        with coord.lock:
+            coord._record("browser", [1, 2, 3, 4], None, 7)
+        assert len(coord.history(0)) == 1
+        assert len(coord.history(9999)) == 1
+        stats = coord.stats()
+        assert stats["database_games"] == 1
+        assert stats["sessions"] == 0
+        assert stats["league_size"] == len(coord.league)
+    finally:
+        coord.db.close()
+
+
+def test_accept_rejects_bad_codes_and_incomplete_game(tmp_path, monkeypatch):
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        for moves, message in (
+            ([89], "Invalid move code"),
+            ([-1], "Invalid move code"),
+            ([1.5], "Invalid move code"),
+            ([], "Incomplete game"),
+        ):
+            ticket = coord.ticket()
+            with pytest.raises(ValueError, match=message):
+                coord.accept({"ticket": ticket["ticket"], "moves": moves})
+    finally:
+        coord.db.close()
+
+
+def test_checkpoint_skips_recent_live_session(tmp_path, monkeypatch):
+    import time
+    from qwixx_ai import distributed
+    from qwixx_ai.web import Session
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    monkeypatch.setenv("QWIXX_CHECKPOINT_IDLE_SECONDS", "120")
+    coord = distributed.Coordinator()
+    try:
+        coord.sessions["live"] = (Session(difficulty="intermediate"), time.time(), None)
+        assert coord.checkpoint(force=False) is False
+    finally:
+        coord.db.close()
+
+
+def test_new_session_expires_stale_sessions_and_checks_player(tmp_path, monkeypatch):
+    import time
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        coord.sessions["stale"] = (object(), time.time() - 90000, None)
+        seen = []
+        monkeypatch.setattr(coord.player_stats, "profile", lambda player_id: seen.append(player_id) or {"id": player_id})
+        result = coord.new_session("intermediate", player_id="player-1", randomize_seating=False)
+        assert "stale" not in coord.sessions
+        assert seen == ["player-1"]
+        assert result["session_id"] in coord.sessions
+    finally:
+        coord.db.close()
+
+
+def test_learn_executes_optimizer_and_updates_priorities(tmp_path, monkeypatch):
+    from qwixx_ai import distributed
+    from qwixx_ai.core import Game
+    from qwixx_ai.env import observe, mask
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        game = Game(seed=111)
+        state = observe(game).copy()
+        next_state = observe(game).copy()
+        next_mask = mask(game).copy()
+        sample = (state, 0, 0.25, next_state, False, next_mask)
+        coord._add_transitions([sample] * 300)
+        before = list(coord.priorities)
+        coord.learn()
+        assert coord.updates == 1
+        assert coord.last_loss is not None
+        assert any(a != b for a, b in zip(before, coord.priorities))
+    finally:
+        coord.db.close()
+
+
+def test_forced_checkpoint_evaluates_existing_champion_without_promotion(tmp_path, monkeypatch):
+    import copy
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        coord.best_model = copy.deepcopy(coord.model).eval()
+        coord.best = 0.50
+        coord.league.clear()
+        monkeypatch.setattr(
+            distributed,
+            "evaluate",
+            lambda model, games, seed: {"win_share": 0.50, "mean_score": 60.0},
+        )
+        old_version = coord.version
+        assert coord.checkpoint(force=True) is True
+        assert coord.version == old_version + 1
+        assert coord.best == 0.50
+        assert coord.last_eval["champion_win_share"] == 0.50
+        assert len(coord.league) == 0
+        assert (tmp_path / "latest.pt").exists()
+        assert (tmp_path / "trainer.pt").exists()
+        assert coord.log.exists()
+    finally:
+        coord.db.close()
+
+
+def test_authenticated_http_stats_and_auth_routes(tmp_path, monkeypatch):
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    monkeypatch.setattr(coord.player_stats, "authenticate", lambda token: "player-1")
+    monkeypatch.setattr(coord.player_stats, "profile", lambda pid: {"id": pid, "name": "Dwight"})
+    monkeypatch.setattr(coord.player_stats, "stats", lambda pid, difficulty: {"player_id": pid, "difficulty": difficulty})
+    monkeypatch.setattr(coord.player_stats, "ai_stats", lambda difficulty: {"difficulty": difficulty, "games": 3})
+    monkeypatch.setattr(coord.player_stats, "leaderboard", lambda difficulty: {"difficulty": difficulty, "leaders": []})
+    monkeypatch.setattr(coord.player_stats, "request_code", lambda email, name: {"sent": True, "email": email, "name": name})
+    monkeypatch.setattr(
+        coord.player_stats,
+        "verify_code",
+        lambda email, code: {"token": "session-token", "player": {"id": "player-1", "email": email}},
+    )
+    logged_out = []
+    monkeypatch.setattr(coord.player_stats, "logout", lambda token: logged_out.append(token))
+
+    class TestHandler(distributed.Handler):
+        def log_message(self, *args):
+            pass
+
+    TestHandler.coord = coord
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+
+    def get(path):
+        req = urllib.request.Request(base + path, headers={"Cookie": "qwixx_auth=abc"})
+        return urllib.request.urlopen(req, timeout=5)
+
+    def post(path, payload):
+        req = urllib.request.Request(
+            base + path,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "Cookie": "qwixx_auth=abc"},
+        )
+        return urllib.request.urlopen(req, timeout=5)
+
+    try:
+        with get("/api/auth/me") as response:
+            assert json.load(response)["player"]["id"] == "player-1"
+        with get("/api/player-stats?difficulty=champion") as response:
+            assert json.load(response)["difficulty"] == "champion"
+        with get("/api/ai-stats?difficulty=advanced") as response:
+            assert json.load(response)["games"] == 3
+        with get("/api/leaderboard?difficulty=champion") as response:
+            assert json.load(response)["leaders"] == []
+
+        with post("/api/auth/request", {"email": "d@example.com", "name": "Dwight"}) as response:
+            assert json.load(response)["sent"] is True
+        with post("/api/auth/verify", {"email": "d@example.com", "code": "123456"}) as response:
+            body = json.load(response)
+            assert body["player"]["id"] == "player-1"
+            assert "qwixx_auth=session-token" in response.headers["Set-Cookie"]
+        with post("/api/auth/logout", {}) as response:
+            assert response.status == 200
+        assert logged_out == ["abc"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        coord.db.close()
