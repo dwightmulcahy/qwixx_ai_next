@@ -727,3 +727,11 @@ def test_document_has_meta_description():
     html = html_source()
     assert 'name="description"' in html
     assert "Play Qwixx against AI opponents" in html
+
+
+def test_document_has_mobile_viewport():
+    html = html_source()
+    assert 'name="viewport"' in html
+    assert 'content="width=device-width, initial-scale=1"' in html
+    assert "user-scalable=no" not in html
+    assert "maximum-scale" not in html
