@@ -716,3 +716,8 @@ def test_new_game_announces_first_roller():
         "state.roller===0?humanDialogName()",
     ):
         assert expected in html, expected
+
+
+def test_document_declares_english_language():
+    html = html_source()
+    assert '<html lang="en">' in html
