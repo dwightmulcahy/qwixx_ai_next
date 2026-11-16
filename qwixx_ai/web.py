@@ -15,7 +15,7 @@ BUILD_DATE = os.getenv('QWIXX_BUILD_DATE', '').strip()
 PYTHON_VERSION = platform.python_version()
 RUNTIME_ARCH = platform.machine() or 'unknown'
 
-HTML='''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="description" content="Play Qwixx against AI opponents with multiple difficulty levels, move analysis, and optional browser-assisted training."><title>Qwixx AI</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
+HTML='''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Play Qwixx against AI opponents with multiple difficulty levels, move analysis, and optional browser-assisted training."><title>Qwixx AI</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><style>
 
 body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:1280px;margin:24px auto;padding:0 16px}
 h1{margin-bottom:4px}.hint{color:#9ca3af}button{cursor:pointer;background:#374151;color:white;border:1px solid #6b7280;border-radius:7px;padding:9px 14px;margin:4px}button:hover{background:#4b5563}button.legal{background:#2563eb}a{color:#93c5fd}
