@@ -12,7 +12,7 @@ def test_version_appears_next_to_heading_and_is_clickable(monkeypatch):
         module = importlib.reload(web)
         assert '<button type="button" id="app-version"' in module.HTML
         assert ">v1.2.3</button>" in module.HTML
-        assert 'onclick="openBuildInfo()"' in module.HTML
+        assert 'data-action="open-build-info"' in module.HTML
         assert 'id="build-info-modal"' in module.HTML
         assert "Build information" in module.HTML
         assert "<code>abcdef1234567890</code>" in module.HTML

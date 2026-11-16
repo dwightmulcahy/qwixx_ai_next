@@ -26,9 +26,9 @@ def test_board_layout_and_accessible_controls():
         "mini-card.rolling", "mini-card.leading",
         "dice-status", "mini-row{border-radius:5px",
         ".number-cell.skipped:after,.mini-number.skipped:after",
-        "aria-label=\"Your move\"", "onclick=\"confirmPhase()\"",
-        "onclick=\"clearSelection()\"", "onclick=\"skipPhase()\"",
-        "onclick=\"backToStep1()\"", "Pass — take strike",
+        "aria-label=\"Your move\"", "data-action=\"confirm-phase\"" ,
+        "data-action=\"clear-selection\"" , "data-action=\"skip-phase\"" ,
+        "data-action=\"back-step1\"" , "Pass — take strike",
         "state.boards.slice(1).map((board,j)=>miniCard(board,j+1))",
     ):
         assert expected in html, expected
@@ -69,8 +69,8 @@ def test_play_layout_keeps_turn_controls_with_dice_and_analysis_below_scorecard(
 def test_pass_is_always_the_final_move_button():
     html = html_source()
     controls = html.split("const buttons=state.done?", 1)[1].split("const shortcuts=", 1)[0]
-    assert controls.index('onclick="backToStep1()"') < controls.index('onclick="skipPhase()"')
-    assert controls.rfind('onclick="skipPhase()"') > controls.rfind('onclick="backToStep1()"')
+    assert controls.index('data-action="back-step1"') < controls.index('data-action="skip-phase"')
+    assert controls.rfind('data-action="skip-phase"') > controls.rfind('data-action="back-step1"')
 
 
 def test_ai_strikes_use_visual_boxes_and_nonblocking_events():
@@ -185,7 +185,7 @@ def test_dice_tile_reserves_stable_desktop_height():
 def test_new_game_dialog_offers_optimal_first_roll():
     html = html_source()
     for expected in (
-        'id="new-game-button"', 'onclick="openNewGameDialog()"',
+        'id="new-game-button"', 'data-action="open-new-game"',
         'id="new-game-modal"', "Start a new game?", "Random first roll",
         "Find optimal first roll", "Randomize seating", "selected starting player",
         "function openNewGameDialog()",
@@ -196,7 +196,7 @@ def test_new_game_dialog_offers_optimal_first_roll():
         "showFindingOptimalRoll();await nextBrowserPaint()",
         "function optimalNewGameEnabled()",
         "if(optimalNewGameEnabled()){void startNewGame(true);return}",
-        '<button onclick="openNewGameDialog()">Play again</button>',
+        '<button data-action="open-new-game">Play again</button>',
     ):
         assert expected in html, expected
 
@@ -313,7 +313,7 @@ def test_back_to_step1_resets_auto_pass_dedupe_and_server_controls_availability(
     html = html_source()
     for expected in (
         "if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}autoPassKey='';state=next",
-        "state.can_undo_step1?'<button onclick=\"backToStep1()\">← Back to Step 1</button>':''",
+        "state.can_undo_step1?'<button data-action=\"back-step1\">← Back to Step 1</button>':''",
     ):
         assert expected in html, expected
 
@@ -464,23 +464,23 @@ assert.match(board,/Red locked/);
 assert.match(board,/class="mini-strikes"/);
 assert.equal((board.match(/mini-penalty-box used/g)||[]).length>=2,true);
 assert.match(board,/mini-card rolling leading/);
-assert.match(board,/onclick="confirmPhase\(\)"/);
-assert.match(board,/onclick="clearSelection\(\)"/);
-assert.match(board,/onclick="skipPhase\(\)"/);
+assert.match(board,/data-action="confirm-phase"/);
+assert.match(board,/data-action="clear-selection"/);
+assert.match(board,/data-action="skip-phase"/);
 assert.doesNotMatch(el('status').innerHTML,/confirmPhase/);
 vm.runInContext('selectMark([0,6,false])',context);
 assert.match(el('boards').innerHTML,/Selected: Red 6/);
-assert.doesNotMatch(el('boards').innerHTML,/confirmPhase\(\)" disabled/);
+assert.doesNotMatch(el('boards').innerHTML,/data-action="confirm-phase" disabled/);
 vm.runInContext('clearSelection()',context);
-assert.match(el('boards').innerHTML,/confirmPhase\(\)" disabled/);
+assert.match(el('boards').innerHTML,/data-action="confirm-phase" disabled/);
 vm.runInContext('state.phase=4;state.roller=0;',context);
 vm.runInContext('render()',context);
 assert.match(el('boards').innerHTML,/Pass — take strike/);
-assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
+assert.doesNotMatch(el("boards").innerHTML,/data-action="skip-phase" disabled/);
 vm.runInContext("moving=true;render()",context);
-assert.match(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
+assert.match(el("boards").innerHTML,/data-action="skip-phase" disabled/);
 vm.runInContext("moving=false;render()",context);
-assert.doesNotMatch(el("boards").innerHTML,/onclick="skipPhase\(\)" disabled/);
+assert.doesNotMatch(el("boards").innerHTML,/data-action="skip-phase" disabled/);
 vm.runInContext("state.scores=[10,10,5,0];state.phase=0;state.roller=1;render()",context);
 const tied=el("boards").innerHTML;
 assert.equal((tied.match(/T-1st of 4/g)||[]).length>=2,true);
@@ -490,7 +490,7 @@ stored['qwixx-auto-pass']='off';
 vm.runInContext("state.actor=0;state.legal=[];state.done=false;moving=false;render()",context);
 const manualPass=el("boards").innerHTML;
 assert.match(manualPass,/No legal marks · Pass required/);
-assert.match(manualPass,/onclick="skipPhase\(\)"/);
+assert.match(manualPass,/data-action="skip-phase"/);
 assert.doesNotMatch(manualPass,/⚡ AUTO PASS/);
 stored['qwixx-auto-pass']='on';
 vm.runInContext("render();if(autoPassTimer){clearTimeout(autoPassTimer);autoPassTimer=null}",context);
@@ -558,8 +558,8 @@ vm.runInContext("state.done=true;state.locks=['red','yellow','blue'];state.board
 const ended=el("boards").innerHTML;
 assert.match(ended,/Game complete/);
 assert.match(ended,/Final scores are shown below/);
-assert.doesNotMatch(ended,/onclick="confirmPhase\(\)"/);
-assert.doesNotMatch(ended,/onclick="skipPhase\(\)"/);
+assert.doesNotMatch(ended,/data-action="confirm-phase"/);
+assert.doesNotMatch(ended,/data-action="skip-phase"/);
 assert.doesNotMatch(ended,/LOCK READY/);
 assert.doesNotMatch(ended,/lock-ready/);
 assert.doesNotMatch(ended,/lock-glyph ready/);
@@ -716,6 +716,16 @@ def test_new_game_announces_first_roller():
         "state.roller===0?humanDialogName()",
     ):
         assert expected in html, expected
+
+
+def test_csp_ready_markup_has_no_inline_event_handlers():
+    html = html_source()
+    import re
+    assert not re.search(r"\\son[a-z]+=[\"']", html)
+    assert 'data-action="confirm-phase"' in html
+    assert "document.addEventListener('click',delegatedClick)" in html
+    assert "document.addEventListener('change',delegatedChange)" in html
+    assert "data-move=" in html
 
 
 def test_document_declares_english_language():
