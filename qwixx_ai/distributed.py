@@ -1,5 +1,5 @@
 """Centralized training coordinator with browser-generated, server-verified games."""
-import json, os, random, secrets, threading, time, copy, uuid, sqlite3, smtplib, logging
+import json, os, random, secrets, threading, time, copy, uuid, sqlite3, smtplib, logging, hashlib, base64, re
 from collections import deque
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -34,6 +34,26 @@ def env_enabled(name, default=True):
 INFERENCE_ONLY=env_enabled('QWIXX_INFERENCE_ONLY', False)
 TRAINING_ENABLED=env_enabled('QWIXX_TRAINING_ENABLED', True) and not INFERENCE_ONLY
 BROWSER_TRAINING_ENABLED=env_enabled('QWIXX_BROWSER_TRAINING_ENABLED', True) and TRAINING_ENABLED
+
+
+def content_security_policy(page):
+    """Build a CSP from the exact inline scripts in the HTML response."""
+    hashes=[]
+    for script in re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script>',page,flags=re.I|re.S):
+        digest=base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+        hashes.append(f"'sha256-{digest}'")
+    script_src=" ".join(["'self'",*hashes,"https://static.cloudflareinsights.com"])
+    return (
+        "default-src 'self'; "
+        f"script-src {script_src}; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'"
+    )
 
 
 class Coordinator:
@@ -430,7 +450,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Referrer-Policy','strict-origin-when-cross-origin')
         super().end_headers()
     def reply(self,obj,status=200,ctype='application/json'):
-        b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
+        b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));ctype_lower=ctype.lower();self.send_header('Content-Security-Policy',content_security_policy(obj)) if ctype_lower.startswith('text/html') else None;self.end_headers();self.wfile.write(b)
     def authorized_worker(self):return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token',''),WORKER_TOKEN)
     def auth_token(self):
         from http.cookies import SimpleCookie

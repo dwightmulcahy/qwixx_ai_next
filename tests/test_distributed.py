@@ -505,7 +505,7 @@ def test_game_script_turn_controls_have_valid_concat():
     assert 'class="move-status"' in HTML
     assert 'class="dice-move-controls"' in HTML
     assert 'class="move-buttons"' in HTML
-    assert 'onclick="confirmPhase()"' in HTML
+    assert 'data-action="confirm-phase"' in HTML
     assert 'function maybeAutoPass()' in HTML
     assert 'id="decision-modal"' in HTML
     assert "function confirmLockAction(action)" in HTML
@@ -1261,6 +1261,45 @@ def test_authenticated_http_stats_and_auth_routes(tmp_path, monkeypatch):
         with post("/api/auth/logout", {}) as response:
             assert response.status == 200
         assert logged_out == ["abc"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        coord.db.close()
+
+
+def test_html_response_enforces_hashed_csp(tmp_path, monkeypatch):
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+
+    class TestHandler(distributed.Handler):
+        def log_message(self, *args):
+            pass
+
+    TestHandler.coord = coord
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{server.server_port}/", timeout=5
+        ) as response:
+            csp = response.headers["Content-Security-Policy"]
+            assert "default-src 'self'" in csp
+            assert "script-src 'self' 'sha256-" in csp
+            assert "object-src 'none'" in csp
+            assert "base-uri 'none'" in csp
+            assert "frame-ancestors 'none'" in csp
+            assert "https://static.cloudflareinsights.com" in csp
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{server.server_port}/health", timeout=5
+        ) as response:
+            assert response.headers.get("Content-Security-Policy") is None
     finally:
         server.shutdown()
         server.server_close()
