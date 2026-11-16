@@ -1266,3 +1266,38 @@ def test_authenticated_http_stats_and_auth_routes(tmp_path, monkeypatch):
         server.server_close()
         thread.join(timeout=5)
         coord.db.close()
+
+
+def test_http_responses_include_browser_security_headers(tmp_path, monkeypatch):
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+
+    class TestHandler(distributed.Handler):
+        def log_message(self, *args):
+            pass
+
+    TestHandler.coord = coord
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{server.server_port}/health", timeout=5
+        ) as response:
+            assert json.load(response) == {"healthy": True}
+            assert response.headers["X-Frame-Options"] == "DENY"
+            assert response.headers["Strict-Transport-Security"] == "max-age=63072000; includeSubDomains; preload"
+            assert response.headers["Cross-Origin-Opener-Policy"] == "same-origin-allow-popups"
+            assert response.headers["X-Content-Type-Options"] == "nosniff"
+            assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        coord.db.close()
