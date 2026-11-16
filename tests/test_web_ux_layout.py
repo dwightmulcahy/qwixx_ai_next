@@ -728,6 +728,17 @@ def test_csp_ready_markup_has_no_inline_event_handlers():
     assert "data-move=" in html
 
 
+def test_dynamic_html_uses_restrictive_trusted_types_policy():
+    html = html_source()
+    assert "createPolicy('qwixx-html'" in html
+    assert "Rejected unsafe dynamic HTML" in html
+    assert "function setHtml(element,value)" in html
+    assert html.count(".innerHTML=") == 1
+    assert "setHtml(document.getElementById('boards')" in html
+    assert "setHtml(body,bodyHtml)" in html
+    assert "javascript\\s*:" in html
+
+
 def test_document_declares_english_language():
     html = html_source()
     assert '<html lang="en">' in html
