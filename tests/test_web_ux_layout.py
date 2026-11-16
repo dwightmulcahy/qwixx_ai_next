@@ -721,3 +721,9 @@ def test_new_game_announces_first_roller():
 def test_document_declares_english_language():
     html = html_source()
     assert '<html lang="en">' in html
+
+
+def test_document_has_meta_description():
+    html = html_source()
+    assert 'name="description"' in html
+    assert "Play Qwixx against AI opponents" in html
