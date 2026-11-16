@@ -422,6 +422,13 @@ class Handler(BaseHTTPRequestHandler):
             if not limited:bucket.append(now)
             self.rate_buckets[key]=bucket
         return limited
+    def end_headers(self):
+        self.send_header('X-Frame-Options','DENY')
+        self.send_header('Strict-Transport-Security','max-age=63072000; includeSubDomains; preload')
+        self.send_header('Cross-Origin-Opener-Policy','same-origin-allow-popups')
+        self.send_header('X-Content-Type-Options','nosniff')
+        self.send_header('Referrer-Policy','strict-origin-when-cross-origin')
+        super().end_headers()
     def reply(self,obj,status=200,ctype='application/json'):
         b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
     def authorized_worker(self):return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token',''),WORKER_TOKEN)
