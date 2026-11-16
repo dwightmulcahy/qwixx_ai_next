@@ -1307,6 +1307,13 @@ def test_html_response_enforces_hashed_csp(tmp_path, monkeypatch):
         coord.db.close()
 
 
+def test_csp_requires_named_trusted_types_policy():
+    from qwixx_ai.distributed import content_security_policy
+    policy = content_security_policy("<html><script>console.log('ok')</script></html>")
+    assert "require-trusted-types-for 'script'" in policy
+    assert "trusted-types qwixx-html" in policy
+
+
 def test_http_responses_include_browser_security_headers(tmp_path, monkeypatch):
     import json
     import threading

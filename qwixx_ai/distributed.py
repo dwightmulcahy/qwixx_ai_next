@@ -52,7 +52,9 @@ def content_security_policy(page):
         "object-src 'none'; "
         "base-uri 'none'; "
         "frame-ancestors 'none'; "
-        "form-action 'self'"
+        "form-action 'self'; "
+        "require-trusted-types-for 'script'; "
+        "trusted-types qwixx-html"
     )
 
 
