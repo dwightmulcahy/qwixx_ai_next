@@ -182,12 +182,16 @@ class PlayerStats:
         if difficulty is not None and difficulty not in ("beginner", "intermediate", "advanced", "champion"):
             raise ValueError("Invalid difficulty")
         limit = max(1, min(int(limit), 100))
-        where = "WHERE player_id=?" + (" AND difficulty=?" if difficulty else "")
+        where = "WHERE player_id=? AND game_mode='standard'" + (" AND difficulty=?" if difficulty else "")
         args = (pid, difficulty) if difficulty else (pid,)
         with self.lock:
             rows = self.db.execute(
                 "SELECT difficulty,score,penalties,turns,scores,result,place,created,game_mode FROM results "
                 + where + " ORDER BY created ASC, rowid ASC", args).fetchall()
+            challenge_rows = self.db.execute(
+                "SELECT difficulty,score,penalties,turns,scores,result,place,created,game_mode FROM results "
+                "WHERE player_id=? AND game_mode='challenge_champion' ORDER BY created ASC,rowid ASC",
+                (pid,)).fetchall()
         games = len(rows)
         wins = sum(row[5] == "win" for row in rows)
         ties = sum(row[5] == "tie" for row in rows)
@@ -214,7 +218,7 @@ class PlayerStats:
             "average_place": round(sum(r[6] for r in rows) / games, 2) if games else 0,
             "current_win_streak": streak, "longest_win_streak": longest,
             "by_difficulty": by_difficulty,
-            "challenge_champion": self._challenge_summary(rows),
+            "challenge_champion": self._challenge_summary(challenge_rows),
             "recent": [{"difficulty": r[0], "score": r[1], "penalties": r[2],
                         "turns": r[3], "scores": json.loads(r[4]), "result": r[5],
                         "place": r[6], "created": r[7], "game_mode": r[8]} for r in reversed(rows[-limit:])]
@@ -243,7 +247,7 @@ class PlayerStats:
         """Aggregate historical performance by AI identity, independent of seat."""
         if difficulty is not None and difficulty not in ("beginner", "intermediate", "advanced", "champion"):
             raise ValueError("Invalid difficulty")
-        condition = "WHERE difficulty=?" if difficulty else ""
+        condition = "WHERE game_mode='standard'" + (" AND difficulty=?" if difficulty else "")
         params = (difficulty,) if difficulty else ()
         with self.lock:
             rows = self.db.execute(
