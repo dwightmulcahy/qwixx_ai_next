@@ -318,14 +318,16 @@ class Coordinator:
             metrics={'time':time.time(),**self.stats()}
         with self.log.open('a') as f:f.write(json.dumps(metrics)+'\n')
         return True
-    def new_session(self,difficulty='champion',player_id=None,optimal_first_roll=False,randomize_seating=True):
+    def new_session(self,difficulty='champion',player_id=None,optimal_first_roll=False,randomize_seating=True,game_mode='standard'):
+        if game_mode not in ('standard','challenge_champion'):raise ValueError('Invalid game mode')
+        if game_mode=='challenge_champion':difficulty='champion'
         with self.lock:
             for key,(_,updated,_) in list(self.sessions.items()):
                 if time.time()-updated>86400:self.sessions.pop(key,None)
             if len(self.sessions)>=200:raise ValueError('Too many game sessions')
             model=self.best_model
         if player_id is not None:self.player_stats.profile(player_id)
-        sid=uuid.uuid4().hex;session=Session(model=model,difficulty=difficulty);session.reset_game(optimal_first_roll,randomize_seating)
+        sid=uuid.uuid4().hex;session=Session(model=model,difficulty=difficulty,game_mode=game_mode);session.reset_game(optimal_first_roll,randomize_seating)
         with self.lock:self.sessions[sid]=(session,time.time(),player_id)
         return {'session_id':sid,**session.view()}
     def session_action(self,sid,action,expected_turn=None,expected_phase=None):
@@ -339,7 +341,7 @@ class Coordinator:
             if expected_turn is not None and (type(expected_turn) is not int or expected_turn!=session.game.turn):raise ValueError('Game state changed; start a new game or reload')
             if expected_phase is not None and (type(expected_phase) is not int or expected_phase!=session.game.phase):raise ValueError('Step already advanced; reload game')
             session.apply_action(action,'human');session.advance();view=session.view()
-            if session.game.done and player_id is not None:self.player_stats.record(sid,player_id,session.difficulty,session.game,session.ai_names)
+            if session.game.done and player_id is not None:self.player_stats.record(sid,player_id,session.difficulty,session.game,session.ai_names,session.game_mode)
         with self.lock:
             if sid in self.sessions:self.sessions[sid]=(session,time.time(),player_id)
         return {'session_id':sid,**view}
@@ -494,7 +496,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/leaderboard' or self.path.startswith('/api/leaderboard?'):
                 from urllib.parse import parse_qs, urlsplit
                 query=parse_qs(urlsplit(self.path).query)
-                try:return self.reply(self.coord.player_stats.leaderboard(query.get('difficulty',[None])[0]))
+                try:return self.reply(self.coord.player_stats.leaderboard(query.get('difficulty',[None])[0],game_mode=query.get('game_mode',['standard'])[0]))
                 except ValueError as exc:return self.reply({'error':str(exc)},400)
             if self.path=='/api/auth/me':
                 pid=self.player_id();return self.reply({'player':self.coord.player_stats.profile(pid) if pid else None})
@@ -551,11 +553,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
                 if self.path=='/reset':
-                    guest=data.get('guest',False);optimal=data.get('optimal_first_roll',False);randomize=data.get('randomize_seating',True)
+                    guest=data.get('guest',False);optimal=data.get('optimal_first_roll',False);randomize=data.get('randomize_seating',True);game_mode=data.get('game_mode','standard')
                     if type(guest) is not bool:raise ValueError('guest must be boolean')
                     if type(optimal) is not bool:raise ValueError('optimal_first_roll must be boolean')
                     if type(randomize) is not bool:raise ValueError('randomize_seating must be boolean')
-                    result=self.coord.new_session(data.get('difficulty','champion'),None if guest else self.player_id(),optimal,randomize)
+                    if game_mode not in ('standard','challenge_champion'):raise ValueError('Invalid game mode')
+                    result=self.coord.new_session(data.get('difficulty','champion'),None if guest else self.player_id(),optimal,randomize,game_mode)
                 else:
                     a=data.get('action');a=None if a is None else tuple(a);sid=data.get('session_id','');entry=self.coord.sessions.get(sid)
                     if entry and entry[2] is not None and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)

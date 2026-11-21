@@ -32,7 +32,7 @@ def _live_incumbent(game):
 
 
 def _live_should_search(game, incumbent):
-    if game.n != 4 or game.done:
+    if game.n not in (2, 4) or game.done:
         return False
     legal = game.legal()
     if not legal:

@@ -673,7 +673,7 @@ def test_leaderboard_defaults_to_champion_and_separates_difficulties():
     assert "['beginner','Beginner']" in leaderboard
     assert "['','All difficulties']" not in leaderboard
     assert "results never mix across difficulty levels" in leaderboard
-    assert "?difficulty='+encodeURIComponent(difficulty)" in leaderboard
+    assert "game_mode='+encodeURIComponent(challenge?'challenge_champion':'standard')" in leaderboard
 
 
 def test_thinking_progress_can_refresh_dice_before_ai_move_completes():
@@ -756,3 +756,19 @@ def test_document_has_mobile_viewport():
     assert 'content="width=device-width, initial-scale=1"' in html
     assert "user-scalable=no" not in html
     assert "maximum-scale" not in html
+
+
+def test_challenge_the_champion_ui_and_top10():
+    html = html_source()
+    for expected in (
+        'id="challenge-champion-button"',
+        'data-action="challenge-champion"',
+        "function startChallengeChampion()",
+        "currentGameMode='challenge_champion'",
+        "game_mode:currentGameMode",
+        "['challenge_champion','⚔️ Challenge the Champion']",
+        "True 1-on-1 games against the Champion AI",
+        "data.challenge_champion",
+        "🏆 Challenge the Champion",
+    ):
+        assert expected in html, expected

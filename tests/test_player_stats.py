@@ -174,3 +174,36 @@ def test_leaderboard_only_verified_players_and_ranking_filters(tmp_path):
     with pytest.raises(ValueError):
         store.leaderboard("impossible")
     store.db.close()
+
+
+def test_challenge_champion_stats_and_leaderboard_are_separate(tmp_path):
+    store = PlayerStats(tmp_path / "players.sqlite3")
+    player = store.create_profile("Challenger")
+    with store.lock:
+        store.db.execute("UPDATE players SET email=? WHERE id=?", ("challenger@example.com", player["id"]))
+        store.db.commit()
+
+    assert store.record("standard", player["id"], "champion",
+                        completed([60, 50, 40, 30]), game_mode="standard")
+    assert store.record("challenge-1", player["id"], "champion",
+                        completed([75, 70]), ["AI-Champion"], "challenge_champion")
+    assert store.record("challenge-2", player["id"], "champion",
+                        completed([55, 80]), ["AI-Champion"], "challenge_champion")
+
+    stats = store.stats(player["id"])
+    assert stats["games"] == 1
+    assert stats["wins"] == 1
+    assert stats["challenge_champion"] == {
+        "games": 2, "wins": 1, "losses": 1, "ties": 0,
+        "win_rate": 50.0, "average_score": 65.0,
+        "highest_score": 75, "longest_win_streak": 1,
+    }
+
+    standard = store.leaderboard("champion")
+    challenge = store.leaderboard("champion", game_mode="challenge_champion")
+    assert standard["game_mode"] == "standard"
+    assert standard["rankings"]["most_games"][0]["games"] == 1
+    assert challenge["game_mode"] == "challenge_champion"
+    assert challenge["rankings"]["most_games"][0]["games"] == 2
+    assert challenge["rankings"]["most_wins"][0]["wins"] == 1
+    store.db.close()
