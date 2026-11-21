@@ -22,6 +22,7 @@ class PlayerStats:
             session_id TEXT PRIMARY KEY, player_id TEXT NOT NULL, difficulty TEXT NOT NULL,
             score INTEGER NOT NULL, penalties INTEGER NOT NULL, turns INTEGER NOT NULL,
             scores TEXT NOT NULL, ai_names TEXT, result TEXT NOT NULL, place INTEGER NOT NULL, created REAL NOT NULL,
+            game_mode TEXT NOT NULL DEFAULT 'standard',
             FOREIGN KEY(player_id) REFERENCES players(id))""")
         self.db.execute("CREATE TABLE IF NOT EXISTS auth_codes (email TEXT PRIMARY KEY, digest TEXT NOT NULL, expires REAL NOT NULL, attempts INTEGER NOT NULL, sent REAL NOT NULL, name TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS auth_sessions (token_hash TEXT PRIMARY KEY, player_id TEXT NOT NULL, expires REAL NOT NULL)")
@@ -30,6 +31,7 @@ class PlayerStats:
         result_columns={r[1] for r in self.db.execute("PRAGMA table_info(results)")}
         if "place" not in result_columns:self.db.execute("ALTER TABLE results ADD COLUMN place INTEGER")
         if "ai_names" not in result_columns:self.db.execute("ALTER TABLE results ADD COLUMN ai_names TEXT")
+        if "game_mode" not in result_columns:self.db.execute("ALTER TABLE results ADD COLUMN game_mode TEXT NOT NULL DEFAULT 'standard'")
         for session_id,scores_json in self.db.execute("SELECT session_id,scores FROM results WHERE place IS NULL").fetchall():
             try:
                 scores=json.loads(scores_json)
@@ -150,23 +152,28 @@ class PlayerStats:
                 raise ValueError("Unknown player profile")
             return {"id": row[0], "name": row[1]}
 
-    def record(self, session_id, player_id, difficulty, game, ai_names=None):
+    def record(self, session_id, player_id, difficulty, game, ai_names=None, game_mode="standard"):
         if not game.done:
             return False
         self.profile(player_id)
+        if game_mode not in ("standard", "challenge_champion"):
+            raise ValueError("Invalid game mode")
         scores = game.scores()
+        expected_players = 2 if game_mode == "challenge_champion" else 4
+        if len(scores) != expected_players:
+            raise ValueError("Invalid player count for game mode")
         highest = max(scores)
         place = 1 + sum(score > scores[0] for score in scores[1:])
         result = "tie" if scores[0] == highest and scores.count(highest) > 1 else ("win" if scores[0] == highest else "loss")
-        canonical = ["AI-Sir Rolls-a-Lot", "AI-Dicey McDiceface", "AI-Count von Qwixx"]
+        canonical = ["AI-Champion"] if game_mode == "challenge_champion" else ["AI-Sir Rolls-a-Lot", "AI-Dicey McDiceface", "AI-Count von Qwixx"]
         names = list(ai_names) if ai_names is not None else canonical
         if sorted(names) != sorted(canonical):
             raise ValueError("Invalid AI seating")
         with self.lock:
             cursor = self.db.execute(
-                "INSERT OR IGNORE INTO results (session_id,player_id,difficulty,score,penalties,turns,scores,ai_names,result,place,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO results (session_id,player_id,difficulty,score,penalties,turns,scores,ai_names,result,place,created,game_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (session_id, player_id, difficulty, scores[0], game.boards[0].penalties,
-                 game.turn + 1, json.dumps(scores), json.dumps(names), result, place, time.time()))
+                 game.turn + 1, json.dumps(scores), json.dumps(names), result, place, time.time(), game_mode))
             self.db.commit()
             return cursor.rowcount == 1
 
@@ -179,7 +186,7 @@ class PlayerStats:
         args = (pid, difficulty) if difficulty else (pid,)
         with self.lock:
             rows = self.db.execute(
-                "SELECT difficulty,score,penalties,turns,scores,result,place,created FROM results "
+                "SELECT difficulty,score,penalties,turns,scores,result,place,created,game_mode FROM results "
                 + where + " ORDER BY created ASC, rowid ASC", args).fetchall()
         games = len(rows)
         wins = sum(row[5] == "win" for row in rows)
@@ -207,9 +214,29 @@ class PlayerStats:
             "average_place": round(sum(r[6] for r in rows) / games, 2) if games else 0,
             "current_win_streak": streak, "longest_win_streak": longest,
             "by_difficulty": by_difficulty,
+            "challenge_champion": self._challenge_summary(rows),
             "recent": [{"difficulty": r[0], "score": r[1], "penalties": r[2],
                         "turns": r[3], "scores": json.loads(r[4]), "result": r[5],
-                        "place": r[6], "created": r[7]} for r in reversed(rows[-limit:])]
+                        "place": r[6], "created": r[7], "game_mode": r[8]} for r in reversed(rows[-limit:])]
+        }
+
+    @staticmethod
+    def _challenge_summary(rows):
+        challenge = [r for r in rows if len(r) > 8 and r[8] == "challenge_champion"]
+        games = len(challenge)
+        wins = sum(r[5] == "win" for r in challenge)
+        ties = sum(r[5] == "tie" for r in challenge)
+        losses = games - wins - ties
+        streak = longest = 0
+        for row in challenge:
+            streak = streak + 1 if row[5] == "win" else 0
+            longest = max(longest, streak)
+        return {
+            "games": games, "wins": wins, "losses": losses, "ties": ties,
+            "win_rate": round(100 * wins / games, 1) if games else 0,
+            "average_score": round(sum(r[1] for r in challenge) / games, 1) if games else 0,
+            "highest_score": max((r[1] for r in challenge), default=None),
+            "longest_win_streak": longest,
         }
 
     def ai_stats(self, difficulty=None):
@@ -277,13 +304,20 @@ class PlayerStats:
             })
         return {"difficulty": difficulty or "all", "games": valid_games, "players": players}
 
-    def leaderboard(self, difficulty=None, limit=10):
+    def leaderboard(self, difficulty=None, limit=10, game_mode="standard"):
         """Public rankings of verified registered players with completed games."""
         if difficulty is not None and difficulty not in ("beginner", "intermediate", "advanced", "champion"):
             raise ValueError("Invalid difficulty")
+        if game_mode not in ("standard", "challenge_champion"):
+            raise ValueError("Invalid game mode")
+        if game_mode == "challenge_champion":
+            difficulty = "champion"
         limit = max(1, min(int(limit), 10))
-        condition = "AND r.difficulty=?" if difficulty else ""
-        params = (difficulty,) if difficulty else ()
+        condition = "AND r.game_mode=?"
+        params = (game_mode,)
+        if difficulty:
+            condition += " AND r.difficulty=?"
+            params += (difficulty,)
         with self.lock:
             rows = self.db.execute(
                 "SELECT p.id, p.name, COUNT(*) AS games, "
@@ -326,5 +360,6 @@ class PlayerStats:
             else:
                 ordered = sorted(eligible, key=lambda p: tuple(-p[key] for key in keys)+(p["name"].casefold(),))
             rankings[name] = ordered[:limit]
-        return {"difficulty": difficulty or "all", "minimum_games_for_rates": 5,
+        return {"difficulty": difficulty or "all", "game_mode": game_mode,
+                "minimum_games_for_rates": 5,
                 "registered_players": len(players), "rankings": rankings}
