@@ -67,6 +67,21 @@ def test_session_random_seating_shuffles_ai_identities_and_can_be_disabled():
     assert len(seen)>1
 
 
+def test_challenge_champion_session_is_true_head_to_head():
+    c=Coordinator()
+    try:
+        game=c.new_session(game_mode='challenge_champion',randomize_seating=False)
+        session=c.sessions[game['session_id']][0]
+        assert game['game_mode']=='challenge_champion'
+        assert game['difficulty']=='champion'
+        assert len(game['boards'])==2
+        assert len(game['scores'])==2
+        assert session.game.n==2
+        assert session.ai_names==['AI-Champion']
+    finally:
+        c.db.close()
+
+
 def test_independent_sessions(tmp_path,monkeypatch):
     from qwixx_ai.web import opening_supports_two_edge_marks
     c=Coordinator()
@@ -1210,7 +1225,7 @@ def test_authenticated_http_stats_and_auth_routes(tmp_path, monkeypatch):
     monkeypatch.setattr(coord.player_stats, "profile", lambda pid: {"id": pid, "name": "Dwight"})
     monkeypatch.setattr(coord.player_stats, "stats", lambda pid, difficulty: {"player_id": pid, "difficulty": difficulty})
     monkeypatch.setattr(coord.player_stats, "ai_stats", lambda difficulty: {"difficulty": difficulty, "games": 3})
-    monkeypatch.setattr(coord.player_stats, "leaderboard", lambda difficulty: {"difficulty": difficulty, "leaders": []})
+    monkeypatch.setattr(coord.player_stats, "leaderboard", lambda difficulty, game_mode="standard": {"difficulty": difficulty, "game_mode": game_mode, "leaders": []})
     monkeypatch.setattr(coord.player_stats, "request_code", lambda email, name: {"sent": True, "email": email, "name": name})
     monkeypatch.setattr(
         coord.player_stats,
