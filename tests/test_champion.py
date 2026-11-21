@@ -129,7 +129,11 @@ def test_live_champion_skip_and_environment_clamps(monkeypatch):
     assert stats["max_futures"] == 32
 
 
-def test_live_should_search_non_four_done_no_legal_and_penalty(monkeypatch):
+def test_live_should_search_two_player_but_not_three_player(monkeypatch):
+    two = Game(n=2, seed=42)
+    two.turn = 15
+    assert champion_module._live_should_search(two, heuristic_v2(two)) is True
+
     three = Game(n=3, seed=42)
     assert champion_module._live_should_search(three, None) is False
 
