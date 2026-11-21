@@ -67,8 +67,10 @@ def test_session_random_seating_shuffles_ai_identities_and_can_be_disabled():
     assert len(seen)>1
 
 
-def test_challenge_champion_session_is_true_head_to_head():
-    c=Coordinator()
+def test_challenge_champion_session_is_true_head_to_head(tmp_path, monkeypatch):
+    from qwixx_ai import distributed
+    monkeypatch.setattr(distributed, 'ROOT', tmp_path)
+    c=distributed.Coordinator()
     try:
         game=c.new_session(game_mode='challenge_champion',randomize_seating=False)
         session=c.sessions[game['session_id']][0]
