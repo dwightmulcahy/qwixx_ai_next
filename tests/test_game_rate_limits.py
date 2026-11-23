@@ -31,4 +31,4 @@ def test_game_limit_prunes_stale_ip_buckets(monkeypatch):
     handler = object.__new__(Handler)
     handler.client_address = ("198.51.100.1", 1234)
     assert handler.game_limited() is False
-    assert len(Handler.rate_buckets) == 1
+    assert len(handler.rate_buckets) == 1
