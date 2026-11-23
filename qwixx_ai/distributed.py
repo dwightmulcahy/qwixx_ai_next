@@ -514,6 +514,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass
         except Exception as e:self.reply({'error':str(e)},500)
+    def read_json_body(self, max_bytes=4096):
+        """Read a bounded JSON object without trusting unbounded Content-Length."""
+        raw_length = self.headers.get('Content-Length')
+        if raw_length is None:
+            raise ValueError('Content-Length required')
+        try:
+            size = int(raw_length)
+        except (ValueError, TypeError):
+            raise ValueError('Invalid Content-Length') from None
+        if size < 1 or size > max_bytes:
+            raise ValueError('Invalid body size')
+        try:
+            value = json.loads(self.rfile.read(size))
+        except (ValueError, UnicodeDecodeError):
+            raise ValueError('Invalid JSON') from None
+        if not isinstance(value, dict):
+            raise ValueError('JSON object required')
+        return value
+
     def do_POST(self):
         if self.path=='/api/admin':
             if not ADMIN_TOKEN or not secrets.compare_digest(self.headers.get('X-Admin-Token',''),ADMIN_TOKEN):return self.reply({'error':'Unauthorized'},403)
@@ -551,7 +570,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'error':'Email delivery failed. Check Gmail app password and SMTP connectivity.'},503)
         if self.path in ('/reset','/move','/undo-step1'):
             try:
-                n=int(self.headers.get('Content-Length','0'));data=json.loads(self.rfile.read(n) or b'{}')
+                data=self.read_json_body(max_bytes=4096)
                 if self.path=='/reset':
                     guest=data.get('guest',False);optimal=data.get('optimal_first_roll',False);randomize=data.get('randomize_seating',True);game_mode=data.get('game_mode','standard')
                     if type(guest) is not bool:raise ValueError('guest must be boolean')
