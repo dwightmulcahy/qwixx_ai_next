@@ -503,8 +503,8 @@ def test_guest_mode_overrides_registered_cookie_without_logging_out():
     assert "if type(guest) is not bool:raise ValueError('guest must be boolean')" in source
     # Guest sessions intentionally have no player_id, so an existing auth cookie
     # must not make their moves/progress fail ownership checks.
-    assert "entry[2] is not None and entry[2]!=self.player_id()" in source
-    assert "entry[2] is not None and entry[2] != self.player_id()" in source
+    assert "if not self.owns_session(sid,entry)" in source
+    assert "expected=self.guest_session_tokens.get(sid)" in source
 
 
 def test_distributed_training_dashboard_remains_embedded():
