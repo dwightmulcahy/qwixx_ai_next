@@ -434,6 +434,7 @@ setInterval(drawDashboard,5000);drawDashboard();
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
     rate_lock=threading.Lock();rate_buckets={}
+    game_limit_per_minute=60
     def limited(self, training=False):
         now=time.monotonic();ip=self.client_address[0]
         # Training jobs generate two requests per game. Keep their quota
@@ -446,6 +447,24 @@ class Handler(BaseHTTPRequestHandler):
             if not limited:bucket.append(now)
             self.rate_buckets[key]=bucket
         return limited
+    def game_limited(self):
+        """Bound game request bursts independently of authentication and training."""
+        now=time.monotonic()
+        key=(self.client_address[0], 'game')
+        with self.rate_lock:
+            # Prune stale keys to prevent unbounded growth from old clients.
+            if len(self.rate_buckets)>2048:
+                self.rate_buckets={k:[t for t in v if now-t<60]
+                                   for k,v in self.rate_buckets.items()
+                                   if any(now-t<60 for t in v)}
+            bucket=[t for t in self.rate_buckets.get(key,[]) if now-t<60]
+            if len(bucket)>=self.game_limit_per_minute:
+                self.rate_buckets[key]=bucket
+                return True
+            bucket.append(now)
+            self.rate_buckets[key]=bucket
+            return False
+
     def end_headers(self):
         self.send_header('X-Frame-Options','DENY')
         self.send_header('Strict-Transport-Security','max-age=63072000; includeSubDomains; preload')
@@ -569,6 +588,7 @@ class Handler(BaseHTTPRequestHandler):
                 logging.exception('Email verification SMTP delivery failed')
                 return self.reply({'error':'Email delivery failed. Check Gmail app password and SMTP connectivity.'},503)
         if self.path in ('/reset','/move','/undo-step1'):
+            if self.game_limited():return self.reply({'error':'Too many game requests'},429)
             try:
                 data=self.read_json_body(max_bytes=4096)
                 if self.path=='/reset':
