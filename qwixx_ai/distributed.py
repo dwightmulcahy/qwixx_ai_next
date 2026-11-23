@@ -561,7 +561,9 @@ class Handler(BaseHTTPRequestHandler):
                 job=self.coord.ticket();job['rolls']=rolls_for(job['seed']);return self.reply(job)
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass
-        except Exception as e:self.reply({'error':str(e)},500)
+        except Exception:
+            logging.exception('Unhandled HTTP GET error')
+            self.reply({'error':'Internal server error'},500)
     def read_json_body(self, max_bytes=4096):
         """Read a bounded JSON object without trusting unbounded Content-Length."""
         raw_length = self.headers.get('Content-Length')
@@ -608,9 +610,9 @@ class Handler(BaseHTTPRequestHandler):
                 data=json.loads(self.rfile.read(n) or b'{}')
                 if self.path=='/api/auth/request':return self.reply(self.coord.player_stats.request_code(data.get('email'),data.get('name')))
                 if self.path=='/api/auth/logout':
-                    self.coord.player_stats.logout(self.auth_token());self.send_response(200);self.send_header('Set-Cookie','qwixx_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'{}');return
+                    self.coord.player_stats.logout(self.auth_token());self.send_response(200);self.send_header('Set-Cookie','qwixx_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'+('; Secure' if os.getenv('QWIXX_COOKIE_SECURE','false').lower()=='true' else ''));self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'{}');return
                 result=self.coord.player_stats.verify_code(data.get('email'),data.get('code'));cookie='qwixx_auth='+result['token']+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000'
-                if self.headers.get('X-Forwarded-Proto','').lower()=='https' or os.getenv('QWIXX_COOKIE_SECURE','false').lower()=='true':cookie+='; Secure'
+                if os.getenv('QWIXX_COOKIE_SECURE','false').lower()=='true':cookie+='; Secure'
                 body=json.dumps({'player':result['player']}).encode();self.send_response(200);self.send_header('Set-Cookie',cookie);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             except (ValueError,TypeError,RuntimeError) as e:return self.reply({'error':str(e)},400 if isinstance(e,ValueError) else 503)
             except (smtplib.SMTPException,OSError):
