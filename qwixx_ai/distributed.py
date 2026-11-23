@@ -434,6 +434,7 @@ setInterval(drawDashboard,5000);drawDashboard();
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
     rate_lock=threading.Lock();rate_buckets={}
+    guest_session_tokens={};guest_token_lock=threading.Lock()
     game_limit_per_minute=60
     def limited(self, training=False):
         now=time.monotonic();ip=self.client_address[0]
@@ -482,6 +483,34 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:return ''
         return cookie['qwixx_auth'].value if 'qwixx_auth' in cookie else ''
     def player_id(self):return self.coord.player_stats.authenticate(self.auth_token())
+    def guest_token(self):
+        from http.cookies import SimpleCookie
+        cookie=SimpleCookie()
+        try:cookie.load(self.headers.get('Cookie',''))
+        except Exception:return ''
+        return cookie['qwixx_guest'].value if 'qwixx_guest' in cookie else ''
+    def owns_session(self, sid, entry):
+        if entry[2] is not None:
+            return entry[2]==self.player_id()
+        with self.guest_token_lock:
+            expected=self.guest_session_tokens.get(sid)
+        return bool(expected and secrets.compare_digest(expected,self.guest_token()))
+    def guest_session_reply(self, result):
+        token=self.guest_token() or secrets.token_urlsafe(32)
+        with self.guest_token_lock:
+            self.guest_session_tokens[result['session_id']]=token
+            active=set(self.coord.sessions)
+            for sid in list(self.guest_session_tokens):
+                if sid not in active:self.guest_session_tokens.pop(sid,None)
+        body=json.dumps(result).encode()
+        self.send_response(200)
+        cookie='qwixx_guest='+token+'; Path=/; HttpOnly; SameSite=Lax'
+        if os.getenv('QWIXX_COOKIE_SECURE','false').lower()=='true':cookie+='; Secure'
+        self.send_header('Set-Cookie',cookie)
+        self.send_header('Content-Type','application/json')
+        self.send_header('Cache-Control','no-store')
+        self.send_header('Content-Length',str(len(body)))
+        self.end_headers();self.wfile.write(body)
     def do_GET(self):
         try:
             if self.path=='/favicon.svg':return self.reply(FAVICON_SVG,ctype='image/svg+xml')
@@ -500,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
                 sid=parse_qs(urlsplit(self.path).query).get('session_id',[''])[0]
                 entry=self.coord.sessions.get(sid)
                 if not entry:return self.reply({'error':'Session not found'},404)
-                if entry[2] is not None and entry[2]!=self.player_id():return self.reply({'error':'Forbidden'},403)
+                if not self.owns_session(sid,entry):return self.reply({'error':'Forbidden'},403)
                 snapshot=entry[0].thinking_view
                 return self.reply({'actor':entry[0].thinking_actor,'state':snapshot})
             if self.path.startswith('/api/history'):
@@ -597,10 +626,12 @@ class Handler(BaseHTTPRequestHandler):
                     if type(optimal) is not bool:raise ValueError('optimal_first_roll must be boolean')
                     if type(randomize) is not bool:raise ValueError('randomize_seating must be boolean')
                     if game_mode not in ('standard','challenge_champion'):raise ValueError('Invalid game mode')
-                    result=self.coord.new_session(data.get('difficulty','champion'),None if guest else self.player_id(),optimal,randomize,game_mode)
+                    owner=None if guest else self.player_id()
+                    result=self.coord.new_session(data.get('difficulty','champion'),owner,optimal,randomize,game_mode)
+                    if owner is None:return self.guest_session_reply(result)
                 else:
                     a=data.get('action');a=None if a is None else tuple(a);sid=data.get('session_id','');entry=self.coord.sessions.get(sid)
-                    if entry and entry[2] is not None and entry[2] != self.player_id():return self.reply({'error':'Session belongs to another player'},403)
+                    if entry and not self.owns_session(sid,entry):return self.reply({'error':'Session belongs to another player'},403)
                     if self.path=='/undo-step1':result=self.coord.session_undo_step1(sid,data.get('expected_turn'),data.get('expected_phase'))
                     else:result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
                 return self.reply(result)
