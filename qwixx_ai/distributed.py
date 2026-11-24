@@ -50,6 +50,10 @@ def content_security_policy(page):
         "img-src 'self' data:; "
         "connect-src 'self'; "
         "object-src 'none'; "
+        "media-src 'none'; "
+        "font-src 'self'; "
+        "worker-src 'self'; "
+        "manifest-src 'self'; "
         "base-uri 'none'; "
         "frame-ancestors 'none'; "
         "form-action 'self'; "
@@ -472,6 +476,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cross-Origin-Opener-Policy','same-origin-allow-popups')
         self.send_header('X-Content-Type-Options','nosniff')
         self.send_header('Referrer-Policy','strict-origin-when-cross-origin')
+        self.send_header('Permissions-Policy','camera=(), microphone=(), geolocation=(), payment=(), usb=()')
+        self.send_header('Cross-Origin-Resource-Policy','same-origin')
         super().end_headers()
     def reply(self,obj,status=200,ctype='application/json'):
         b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));ctype_lower=ctype.lower();self.send_header('Content-Security-Policy',content_security_policy(obj)) if ctype_lower.startswith('text/html') else None;self.end_headers();self.wfile.write(b)
