@@ -459,9 +459,9 @@ class Handler(BaseHTTPRequestHandler):
         with self.rate_lock:
             # Prune stale keys to prevent unbounded growth from old clients.
             if len(self.rate_buckets)>2048:
-                self.rate_buckets={k:[t for t in v if now-t<60]
-                                   for k,v in self.rate_buckets.items()
-                                   if any(now-t<60 for t in v)}
+                for stale_key, timestamps in list(self.rate_buckets.items()):
+                    if not any(now-t<60 for t in timestamps):
+                        self.rate_buckets.pop(stale_key,None)
             bucket=[t for t in self.rate_buckets.get(key,[]) if now-t<60]
             if len(bucket)>=self.game_limit_per_minute:
                 self.rate_buckets[key]=bucket
@@ -500,7 +500,7 @@ class Handler(BaseHTTPRequestHandler):
             return entry[2]==self.player_id()
         with self.guest_token_lock:
             expected=self.guest_session_tokens.get(sid)
-        return bool(expected and secrets.compare_digest(expected,self.guest_token()))
+        return bool(expected and secrets.compare_digest(expected.encode(),self.guest_token().encode()))
     def guest_session_reply(self, result):
         token=self.guest_token() or secrets.token_urlsafe(32)
         with self.guest_token_lock:
