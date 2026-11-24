@@ -207,3 +207,33 @@ def test_challenge_champion_stats_and_leaderboard_are_separate(tmp_path):
     assert challenge["rankings"]["most_games"][0]["games"] == 2
     assert challenge["rankings"]["most_wins"][0]["wins"] == 1
     store.db.close()
+
+
+@pytest.mark.parametrize("difficulty,mode,scores", [
+    ("invalid", "standard", [60, 50, 40, 30]),
+    ("beginner", "challenge_champion", [60, 50]),
+    ("advanced", "challenge_champion", [60, 50]),
+])
+def test_invalid_ranked_difficulty_cannot_pollute_results(tmp_path, difficulty, mode, scores):
+    store = PlayerStats(tmp_path / "players.sqlite3")
+    player = store.create_profile("Tester")
+    try:
+        with pytest.raises(ValueError):
+            store.record("invalid", player["id"], difficulty, completed(scores), game_mode=mode)
+        assert store.db.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 0
+    finally:
+        store.db.close()
+
+
+def test_duplicate_challenge_result_cannot_change_winner(tmp_path):
+    store = PlayerStats(tmp_path / "players.sqlite3")
+    player = store.create_profile("Tester")
+    try:
+        assert store.record("same", player["id"], "champion", completed([40, 70]), game_mode="challenge_champion")
+        assert not store.record("same", player["id"], "champion", completed([100, 10]), game_mode="challenge_champion")
+        stats = store.stats(player["id"])["challenge_champion"]
+        assert stats["games"] == 1
+        assert stats["wins"] == 0
+        assert stats["losses"] == 1
+    finally:
+        store.db.close()
