@@ -1,4 +1,4 @@
-"""Browser security policies are applied to actual HTTP response headers."""
+"""Verify browser security policies on generated HTTP response headers."""
 from unittest.mock import Mock, patch
 from http.server import BaseHTTPRequestHandler
 
