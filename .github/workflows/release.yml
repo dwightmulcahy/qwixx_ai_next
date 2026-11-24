@@ -46,6 +46,11 @@ jobs:
           ref: ${{ steps.version.outputs.tag }}
           fetch-depth: 0
 
+      - name: Bundle release notes for the "What's new" dialog
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: python3 scripts/build_changelog.py --upto "$VERSION" --repository "$GITHUB_REPOSITORY" --output qwixx_ai/changelog.json
+
       - name: Verify tag is on main
         id: verify
         env:
