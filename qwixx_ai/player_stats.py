@@ -158,6 +158,10 @@ class PlayerStats:
         self.profile(player_id)
         if game_mode not in ("standard", "challenge_champion"):
             raise ValueError("Invalid game mode")
+        if difficulty not in ("beginner", "intermediate", "advanced", "champion"):
+            raise ValueError("Invalid difficulty")
+        if game_mode == "challenge_champion" and difficulty != "champion":
+            raise ValueError("Challenge requires champion difficulty")
         scores = game.scores()
         expected_players = 2 if game_mode == "challenge_champion" else 4
         if len(scores) != expected_players:
