@@ -160,6 +160,13 @@ jobs:
             ${{ steps.latest.outputs.publish_major == 'true' && format('{0}/qwixx-ai:{1}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major) || '' }}
             ${{ steps.latest.outputs.publish_minor == 'true' && format('{0}/qwixx-ai:{1}.{2}', secrets.DOCKERHUB_USERNAME, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
             ${{ steps.latest.outputs.publish_latest == 'true' && format('{0}/qwixx-ai:latest', secrets.DOCKERHUB_USERNAME) || '' }}
+          # OCI labels: let tools such as Updock and Watchtower show the version
+          labels: |
+            org.opencontainers.image.title=Qwixx AI
+            org.opencontainers.image.version=${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}.${{ steps.version.outputs.patch }}
+            org.opencontainers.image.revision=${{ steps.verify.outputs.sha }}
+            org.opencontainers.image.created=${{ steps.buildmeta.outputs.built_at }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           build-args: |
             QWIXX_GIT_VERSION=${{ steps.version.outputs.tag }}
             QWIXX_GIT_SHA=${{ steps.verify.outputs.sha }}
