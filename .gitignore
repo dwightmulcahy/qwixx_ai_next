@@ -10,3 +10,4 @@ qwixx_ai.egg-info/
 
 # generated at release time (scripts/build_changelog.py)
 qwixx_ai/changelog.json
+.coverage
