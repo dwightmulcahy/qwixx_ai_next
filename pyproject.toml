@@ -10,6 +10,9 @@ dependencies=['numpy>=2.2.6','torch>=2.14.1']
 gym=['gymnasium>=1.4.0']
 dev=['pytest>=9.2.0','pytest-cov>=7.1.0','gymnasium>=1.4.0','ruff>=0.17.6']
 
+[tool.setuptools.package-data]
+qwixx_ai = ["whats-new.js", "changelog.json"]
+
 [tool.setuptools.packages.find]
 include = ['qwixx_ai*']
 exclude = ['tests*', 'runs*']

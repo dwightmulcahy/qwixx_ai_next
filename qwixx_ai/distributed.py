@@ -434,6 +434,16 @@ let metricPoints=[];
 async function drawDashboard(){try{const x=await(await fetch('/api/stats')).json();metricPoints.push(x);metricPoints=metricPoints.slice(-60);document.getElementById('trainingStats').textContent=`Training ${x.paused?'PAUSED':'ACTIVE'} · uptime ${Math.floor(x.uptime_seconds/60)} min · Games ${x.games} · central ${x.central_games} · browser ${x.browser_games} · updates ${x.updates} · replay ${x.replay_size} · loss ${x.loss??'—'} · best ${(100*x.best_win_share).toFixed(1)}% · sessions ${x.sessions} · DB ${x.database_games}`;const c=document.getElementById('trainingChart'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#60a5fa';ctx.beginPath();metricPoints.forEach((p,i)=>{let xx=i*Math.max(1,c.width/59),yy=c.height-20-Math.min(140,(p.updates/(metricPoints[metricPoints.length-1].updates||1))*140);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.stroke();const h=await(await fetch('/api/history?limit=12')).json();document.getElementById('trainingHistory').textContent=h.games.map(g=>`${g.source}: ${g.scores.join('/')}`).join(' · ')||'No persisted games yet.';}catch(e){document.getElementById('trainingStats').textContent='Training status unavailable: '+e.message}}
 setInterval(drawDashboard,5000);drawDashboard();
 </script></body>''').replace('__MAX_BROWSER_WORKERS__',str(MAX_BROWSER_WORKERS))
+# "What's new" after an upgrade: the release build bundles changelog.json
+# (scripts/build_changelog.py); without it (dev, tests) the page is unchanged
+WHATS_NEW_JS=Path(__file__).with_name('whats-new.js')
+CHANGELOG_JSON=Path(__file__).with_name('changelog.json')
+def with_whats_new(page,changelog=CHANGELOG_JSON):
+    if not changelog.is_file():return page
+    tag=('<style>:root{--wn-bg:var(--panel);--wn-text:var(--text);--wn-line:var(--border);--wn-accent:var(--qw-blue)}</style>'
+         '<script src="/whats-new.js" data-src="/changelog.json" data-key="qwixx.seenVersion" defer></script>')
+    return page.replace('</head>',tag+'</head>',1)
+DASHBOARD_HTML=with_whats_new(DASHBOARD_HTML)
 
 class Handler(BaseHTTPRequestHandler):
     coord=None;session=None
@@ -528,6 +538,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/worker.js':
                 if not BROWSER_TRAINING_ENABLED:return self.reply({'error':'Browser training disabled'},403)
                 return self.reply(WORKER_JS,ctype='application/javascript; charset=utf-8')
+            if self.path=='/whats-new.js':return self.reply(WHATS_NEW_JS.read_text(encoding='utf-8'),ctype='application/javascript; charset=utf-8')
+            if self.path=='/changelog.json':
+                if not CHANGELOG_JSON.is_file():return self.reply({'error':'not found'},404)
+                return self.reply(CHANGELOG_JSON.read_text(encoding='utf-8'),ctype='application/json; charset=utf-8')
             if self.path=='/health':return self.reply({'healthy':True})
             if self.path=='/api/stats':return self.reply(self.coord.stats())
             if self.path.startswith('/api/session-progress?'):
