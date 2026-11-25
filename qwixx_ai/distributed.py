@@ -641,10 +641,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'error':'Email delivery failed. Check Gmail app password and SMTP connectivity.'},503)
         if self.path in ('/reset','/move','/undo-step1'):
             if self.game_limited():return self.reply({'error':'Too many game requests'},429)
+            try:
+                data=self.read_json_body(max_bytes=4096)
+            except ValueError as e:return self.reply({'error':str(e)},400)
             if not self.inference_slots.acquire(blocking=False):
                 return self.reply({'error':'Game server busy; retry shortly'},503)
             try:
-                data=self.read_json_body(max_bytes=4096)
                 if self.path=='/reset':
                     guest=data.get('guest',False);optimal=data.get('optimal_first_roll',False);randomize=data.get('randomize_seating',True);game_mode=data.get('game_mode','standard')
                     if type(guest) is not bool:raise ValueError('guest must be boolean')
