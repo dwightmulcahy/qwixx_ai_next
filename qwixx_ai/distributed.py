@@ -450,6 +450,7 @@ class Handler(BaseHTTPRequestHandler):
     rate_lock=threading.Lock();rate_buckets={}
     guest_session_tokens={};guest_token_lock=threading.Lock()
     game_limit_per_minute=60
+    inference_slots=threading.BoundedSemaphore(max(1,min(16,int(os.getenv('QWIXX_MAX_CONCURRENT_GAMES','2')))))
     def limited(self, training=False):
         now=time.monotonic();ip=self.client_address[0]
         # Training jobs generate two requests per game. Keep their quota
@@ -640,6 +641,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'error':'Email delivery failed. Check Gmail app password and SMTP connectivity.'},503)
         if self.path in ('/reset','/move','/undo-step1'):
             if self.game_limited():return self.reply({'error':'Too many game requests'},429)
+            if not self.inference_slots.acquire(blocking=False):
+                return self.reply({'error':'Game server busy; retry shortly'},503)
             try:
                 data=self.read_json_body(max_bytes=4096)
                 if self.path=='/reset':
@@ -658,6 +661,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:result=self.coord.session_action(sid,a,data.get('expected_turn'),data.get('expected_phase'))
                 return self.reply(result)
             except (ValueError,RuntimeError,KeyError,TypeError) as e:return self.reply({'error':str(e)},400)
+            finally:self.inference_slots.release()
         if self.path!='/api/submit':self.send_error(404);return
         if not BROWSER_TRAINING_ENABLED:return self.reply({'error':'Browser training disabled'},403)
         if self.limited(training=True):return self.reply({'error':'Rate limit exceeded'},429)
