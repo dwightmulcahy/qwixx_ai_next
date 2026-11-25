@@ -44,3 +44,16 @@ def test_validation_error_releases_inference_slot(monkeypatch):
     request.reply.assert_called_once_with({"error": "Invalid JSON"}, 400)
     assert request.inference_slots.acquire(blocking=False)
     request.inference_slots.release()
+
+
+def test_body_read_does_not_hold_inference_slot(monkeypatch):
+    request = handler(monkeypatch)
+
+    def read_body(**kwargs):
+        assert request.inference_slots.acquire(blocking=False)
+        request.inference_slots.release()
+        return {"guest": False}
+
+    request.read_json_body.side_effect = read_body
+    request.do_POST()
+    request.coord.new_session.assert_called_once()
