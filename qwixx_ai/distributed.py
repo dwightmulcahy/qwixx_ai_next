@@ -515,12 +515,15 @@ class Handler(BaseHTTPRequestHandler):
             expected=self.guest_session_tokens.get(sid)
         return bool(expected and secrets.compare_digest(expected.encode(),self.guest_token().encode()))
     def guest_session_reply(self, result):
-        token=self.guest_token() or secrets.token_urlsafe(32)
-        with self.guest_token_lock:
-            self.guest_session_tokens[result['session_id']]=token
+        candidate=self.guest_token()
+        with self.coord.lock:
             active=set(self.coord.sessions)
+        with self.guest_token_lock:
             for sid in list(self.guest_session_tokens):
                 if sid not in active:self.guest_session_tokens.pop(sid,None)
+            # Only reuse credentials previously issued by this server.
+            token=candidate if candidate and candidate in self.guest_session_tokens.values() else secrets.token_urlsafe(32)
+            self.guest_session_tokens[result['session_id']]=token
         body=json.dumps(result).encode()
         self.send_response(200)
         cookie='qwixx_guest='+token+'; Path=/; HttpOnly; SameSite=Lax'
