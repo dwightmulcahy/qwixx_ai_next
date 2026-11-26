@@ -445,6 +445,30 @@ def with_whats_new(page,changelog=CHANGELOG_JSON):
     return page.replace('</head>',tag+'</head>',1)
 DASHBOARD_HTML=with_whats_new(DASHBOARD_HTML)
 
+class BoundedHTTPServer(ThreadingHTTPServer):
+    """Limit accepted connections before allocating request threads."""
+
+    def __init__(self, address, handler, max_connections=64):
+        self.connection_slots = threading.BoundedSemaphore(max_connections)
+        super().__init__(address, handler)
+
+    def process_request(self, request, client_address):
+        if not self.connection_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self.connection_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.connection_slots.release()
+
+
 class Handler(BaseHTTPRequestHandler):
     # Bound idle socket reads and writes, including headers and request bodies.
     timeout = 10.0
@@ -691,7 +715,7 @@ def main():
     worker_count=max(0,min(4,int(os.getenv('QWIXX_CENTRAL_WORKERS','2')))) if TRAINING_ENABLED else 0
     workers=[threading.Thread(target=c.run_rollouts,daemon=True,name=f'rollout-{i}') for i in range(worker_count)]
     for worker in workers:worker.start()
-    server=ThreadingHTTPServer((a.host,a.port),Handler)
+    server=BoundedHTTPServer((a.host,a.port),Handler,max_connections=max(8,min(256,int(os.getenv('QWIXX_MAX_HTTP_CONNECTIONS','64')))))
     print(f'Qwixx distributed server: http://{a.host}:{a.port} | persistent data: {ROOT}',flush=True)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
