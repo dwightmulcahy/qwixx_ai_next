@@ -1364,3 +1364,235 @@ def test_http_responses_include_browser_security_headers(tmp_path, monkeypatch):
         server.server_close()
         thread.join(timeout=5)
         coord.db.close()
+
+
+def test_runtime_http_branch_matrix(tmp_path, monkeypatch):
+    """Exercise security, auth, worker, and game HTTP branches through real requests."""
+    import json
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    monkeypatch.setattr(distributed, "BROWSER_TRAINING_ENABLED", True)
+    monkeypatch.setattr(distributed, "ADMIN_TOKEN", "admin-secret")
+    coord = distributed.Coordinator()
+
+    # Keep this test local and deterministic. These endpoints are transport tests;
+    # the PlayerStats behavior itself has dedicated coverage.
+    coord.player_stats.ai_stats = lambda difficulty=None: (
+        (_ for _ in ()).throw(ValueError("bad difficulty"))
+        if difficulty == "bogus" else {"difficulty": difficulty}
+    )
+    coord.player_stats.leaderboard = lambda difficulty=None, game_mode="standard": (
+        (_ for _ in ()).throw(ValueError("bad leaderboard"))
+        if difficulty == "bogus" else {"difficulty": difficulty, "game_mode": game_mode}
+    )
+    coord.player_stats.request_code = lambda email, name: {"sent": True, "email": email, "name": name}
+    coord.player_stats.verify_code = lambda email, code: {
+        "token": "verified-token", "player": {"email": email, "name": "Tester"}
+    }
+    coord.player_stats.logout = lambda token: None
+    coord.player_stats.authenticate = lambda token: "player-1" if token == "auth-token" else None
+    coord.player_stats.profile = lambda pid: {"id": pid, "name": "Tester"} if pid else None
+    coord.player_stats.stats = lambda pid, difficulty=None: {"id": pid, "difficulty": difficulty}
+
+    class TestHandler(distributed.Handler):
+        def log_message(self, *args):
+            pass
+
+    TestHandler.coord = coord
+    TestHandler.rate_buckets = {}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+
+    def request(path, method="GET", payload=None, headers=None):
+        body = None if payload is None else json.dumps(payload).encode()
+        merged = dict(headers or {})
+        if body is not None:
+            merged.setdefault("Content-Type", "application/json")
+        req = urllib.request.Request(base + path, data=body, headers=merged, method=method)
+        return urllib.request.urlopen(req, timeout=5)
+
+    def error_code(path, method="GET", payload=None, headers=None):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            request(path, method, payload, headers)
+        return err.value.code
+
+    try:
+        # Enabled browser-training paths.
+        with request("/worker.js") as response:
+            assert "runGame" in response.read().decode()
+
+        # GET validation/error branches.
+        assert error_code("/api/ai-stats?difficulty=bogus") == 400
+        assert error_code("/api/leaderboard?difficulty=bogus") == 400
+        with request("/api/auth/me", headers={"Cookie": "qwixx_auth=auth-token"}) as response:
+            assert json.load(response)["player"]["id"] == "player-1"
+        with request("/api/player-stats?difficulty=champion",
+                     headers={"Cookie": "qwixx_auth=auth-token"}) as response:
+            assert json.load(response)["difficulty"] == "champion"
+
+        # Worker job: rate limited, unauthorized, then successful.
+        TestHandler.limited = lambda self, training=False: True
+        assert error_code("/api/job") == 429
+        TestHandler.limited = lambda self, training=False: False
+        TestHandler.authorized_worker = lambda self: False
+        assert error_code("/api/job") == 403
+        TestHandler.authorized_worker = lambda self: True
+        with request("/api/job") as response:
+            job = json.load(response)
+        assert job["ticket"] and job["rolls"]
+
+        # Admin command branches.
+        assert error_code("/api/admin", "POST", {"command": "pause"},
+                          {"X-Admin-Token": "wrong"}) == 403
+        with request("/api/admin", "POST", {"command": "pause"},
+                     {"X-Admin-Token": "admin-secret"}) as response:
+            assert json.load(response)["paused"] is True
+        monkeypatch.setattr(distributed, "TRAINING_ENABLED", False)
+        assert error_code("/api/admin", "POST", {"command": "resume"},
+                          {"X-Admin-Token": "admin-secret"}) == 400
+        monkeypatch.setattr(distributed, "TRAINING_ENABLED", True)
+        with request("/api/admin", "POST", {"command": "resume"},
+                     {"X-Admin-Token": "admin-secret"}) as response:
+            assert json.load(response)["paused"] is False
+        coord.checkpoint = lambda force=False: True
+        with request("/api/admin", "POST", {"command": "checkpoint"},
+                     {"X-Admin-Token": "admin-secret"}) as response:
+            assert json.load(response)["ok"] is True
+        assert error_code("/api/admin", "POST", {"command": "rollback"},
+                          {"X-Admin-Token": "admin-secret"}) == 400
+        assert error_code("/api/admin", "POST", {},
+                          {"X-Admin-Token": "admin-secret", "Content-Length": "0"}) == 400
+
+        # Authentication request, verify, logout, secure-cookie branch, and throttling.
+        TestHandler.limited = lambda self, training=False: False
+        with request("/api/auth/request", "POST",
+                     {"email": "a@example.com", "name": "A"}) as response:
+            assert json.load(response)["sent"] is True
+        monkeypatch.setenv("QWIXX_COOKIE_SECURE", "true")
+        with request("/api/auth/verify", "POST",
+                     {"email": "a@example.com", "code": "123456"}) as response:
+            assert "Secure" in response.headers["Set-Cookie"]
+        with request("/api/auth/logout", "POST", {},
+                     {"Cookie": "qwixx_auth=auth-token"}) as response:
+            assert response.status == 200
+        TestHandler.limited = lambda self, training=False: True
+        assert error_code("/api/auth/request", "POST", {}) == 429
+        TestHandler.limited = lambda self, training=False: False
+
+        # Guest reset creates an ownership cookie. Exercise owned and forbidden progress.
+        TestHandler.game_limited = lambda self: False
+        with request("/reset", "POST", {
+            "guest": True,
+            "difficulty": "beginner",
+            "randomize_seating": False,
+        }) as response:
+            guest = json.load(response)
+            guest_cookie = response.headers["Set-Cookie"].split(";", 1)[0]
+        sid = guest["session_id"]
+        with request(f"/api/session-progress?session_id={sid}",
+                     headers={"Cookie": guest_cookie}) as response:
+            assert "actor" in json.load(response)
+        assert error_code(f"/api/session-progress?session_id={sid}") == 403
+        assert error_code("/reset", "POST", {"guest": True, "game_mode": "bogus"}) == 400
+
+        # Busy inference slot and per-game throttling branches.
+        TestHandler.game_limited = lambda self: True
+        assert error_code("/reset", "POST", {"guest": True}) == 429
+        TestHandler.game_limited = lambda self: False
+        coord_slot = TestHandler.inference_slots
+        assert coord_slot.acquire(blocking=False)
+        try:
+            assert error_code("/reset", "POST", {"guest": True}) == 503
+        finally:
+            coord_slot.release()
+
+        # Browser submit: rate-limit, worker authorization, bad body, success.
+        TestHandler.limited = lambda self, training=False: True
+        assert error_code("/api/submit", "POST", {}) == 429
+        TestHandler.limited = lambda self, training=False: False
+        TestHandler.authorized_worker = lambda self: False
+        assert error_code("/api/submit", "POST", {}) == 403
+        TestHandler.authorized_worker = lambda self: True
+        assert error_code("/api/submit", "POST", {}) == 400
+        coord.accept = lambda data: {"accepted": True, "echo": data.get("ok")}
+        with request("/api/submit", "POST", {"ok": 7}) as response:
+            assert json.load(response) == {"accepted": True, "echo": 7}
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        coord.db.close()
+
+
+def test_coordinator_guard_and_policy_branches(tmp_path, monkeypatch):
+    """Cover coordinator capacity, mode, policy, and stale-session guard paths."""
+    import time
+    from types import SimpleNamespace
+
+    from qwixx_ai import distributed
+
+    monkeypatch.setattr(distributed, "ROOT", tmp_path)
+    coord = distributed.Coordinator()
+    try:
+        # ticket() prunes stale tickets and rejects capacity.
+        coord.pending = {"stale": (1, time.time() - 901)}
+        ticket = coord.ticket()
+        assert "stale" not in coord.pending
+        coord.pending = {str(i): (i, time.time()) for i in range(distributed.MAX_PENDING)}
+        with pytest.raises(ValueError, match="Too many outstanding tickets"):
+            coord.ticket()
+
+        with pytest.raises(ValueError, match="Invalid game mode"):
+            coord.new_session(game_mode="bogus")
+
+        # Prune an expired game session before creating the next one.
+        coord.sessions = {"old": (object(), time.time() - 90000, None)}
+        created = coord.new_session("beginner", randomize_seating=False)
+        assert "old" not in coord.sessions
+        assert created["session_id"]
+
+        # Session-capacity protection.
+        coord.sessions = {
+            str(i): (object(), time.time(), None) for i in range(200)
+        }
+        with pytest.raises(ValueError, match="Too many game sessions"):
+            coord.new_session("beginner")
+
+        # policy_export selects champion when present, current model otherwise.
+        seen = []
+        monkeypatch.setattr(distributed, "export_policy",
+                            lambda model: seen.append(model) or {"architecture": "x"})
+        coord.sessions = {}
+        coord.best_model = None
+        coord.policy_export()
+        assert seen[-1] is coord.model
+        champion = object()
+        coord.best_model = champion
+        coord.policy_export()
+        assert seen[-1] is champion
+
+        # Undo validation branches plus successful state refresh.
+        fake_game = SimpleNamespace(turn=3, phase=1)
+        fake = SimpleNamespace(
+            lock=__import__("threading").Lock(),
+            game=fake_game,
+            undo_step1=lambda: None,
+            view=lambda: {"turn": 3, "phase": 1},
+        )
+        coord.sessions = {"s": (fake, time.time(), None)}
+        with pytest.raises(ValueError, match="Game state changed"):
+            coord.session_undo_step1("s", None, 1)
+        with pytest.raises(ValueError, match="Step already advanced"):
+            coord.session_undo_step1("s", 3, None)
+        result = coord.session_undo_step1("s", 3, 1)
+        assert result["session_id"] == "s"
+    finally:
+        coord.db.close()
