@@ -207,14 +207,14 @@ def main():
                     ))
                     page.route("**/move", overload_then_accept)
                     page.evaluate("confirmPhase()")
-                    page.wait_for_function("!moving && !optimisticAction && !thinkingVisible")
+                    page.wait_for_function("() => !moving && !optimisticAction && !thinkingVisible")
                     assert len(attempts) == 1
                     assert page.evaluate("state.session_id") == snapshot["session_id"]
                     assert page.evaluate("pending") == [0, 2, False]
                     assert page.locator(".number-cell.optimistic-mark").count() == 0
                     assert "retry your action" in page.locator("#game-error").inner_text()
                     page.evaluate("confirmPhase()")
-                    page.wait_for_function("!moving && pending === null")
+                    page.wait_for_function("() => !moving && pending === null")
                     assert len(attempts) == 2
                     assert attempts[0] == attempts[1]
                     page.unroute("**/move")
