@@ -184,6 +184,43 @@ def main():
                     assert finding_roll.is_hidden()
                     dismiss_first_roller(page)
 
+                    # Exercise the real move controller through rejection and manual retry.
+                    page.evaluate("""() => {
+                        state.actor = 0;
+                        state.done = false;
+                        state.legal = [[0,2,false]];
+                        state.boards[0].rows[0] = [];
+                        pending = [0,2,false];
+                        render();
+                    }""")
+                    snapshot = page.evaluate("structuredClone(state)")
+                    attempts = []
+                    def overload_then_accept(route):
+                        attempts.append(route.request.post_data_json)
+                        if len(attempts) == 1:
+                            route.fulfill(status=503, json={"error": "Game server busy"})
+                        else:
+                            route.fulfill(status=200, json=snapshot)
+
+                    page.route("**/api/session-progress?*", lambda route: route.fulfill(
+                        status=200, json={"actor": None, "state": None}
+                    ))
+                    page.route("**/move", overload_then_accept)
+                    page.evaluate("confirmPhase()")
+                    page.wait_for_function("!moving && !optimisticAction && !thinkingVisible")
+                    assert len(attempts) == 1
+                    assert page.evaluate("state.session_id") == snapshot["session_id"]
+                    assert page.evaluate("pending") == [0, 2, False]
+                    assert page.locator(".number-cell.optimistic-mark").count() == 0
+                    assert "retry your action" in page.locator("#game-error").inner_text()
+                    page.evaluate("confirmPhase()")
+                    page.wait_for_function("!moving && pending === null")
+                    assert len(attempts) == 2
+                    assert attempts[0] == attempts[1]
+                    page.unroute("**/move")
+                    page.unroute("**/api/session-progress?*")
+                    page.locator("#game-error").evaluate("el => el.hidden = true")
+
                     # The human mark paints before the AI thinking indicator appears.
                     page.evaluate(
                         """() => {
