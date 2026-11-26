@@ -494,7 +494,7 @@ class Handler(BaseHTTPRequestHandler):
         super().end_headers()
     def reply(self,obj,status=200,ctype='application/json'):
         b=(json.dumps(obj) if ctype=='application/json' else obj).encode();self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(b)));ctype_lower=ctype.lower();self.send_header('Content-Security-Policy',content_security_policy(obj)) if ctype_lower.startswith('text/html') else None;self.end_headers();self.wfile.write(b)
-    def authorized_worker(self):return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token',''),WORKER_TOKEN)
+    def authorized_worker(self):return not WORKER_TOKEN or secrets.compare_digest(self.headers.get('X-Worker-Token','').encode(),WORKER_TOKEN.encode())
     def auth_token(self):
         from http.cookies import SimpleCookie
         cookie=SimpleCookie()
@@ -611,7 +611,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path=='/api/admin':
-            if not ADMIN_TOKEN or not secrets.compare_digest(self.headers.get('X-Admin-Token',''),ADMIN_TOKEN):return self.reply({'error':'Unauthorized'},403)
+            if not ADMIN_TOKEN or not secrets.compare_digest(self.headers.get('X-Admin-Token','').encode(),ADMIN_TOKEN.encode()):return self.reply({'error':'Unauthorized'},403)
             try:
                 n=int(self.headers.get('Content-Length','0'))
                 if n<1 or n>1000:raise ValueError('Invalid body size')
