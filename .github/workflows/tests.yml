@@ -77,6 +77,19 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-fail-under=90 \
             --junitxml=all-tests.xml
+      - name: Require independent branch coverage
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("coverage.xml").getroot()
+          covered = int(root.attrib["branches-covered"])
+          total = int(root.attrib["branches-valid"])
+          if total <= 0 or not 0 <= covered <= total:
+              raise SystemExit("Invalid or missing branch coverage")
+          print(f"Branch coverage: {covered}/{total} ({covered / total:.2%})")
+          if covered * 100 < total * 90:
+              raise SystemExit("Independent branch coverage below 90%")
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
