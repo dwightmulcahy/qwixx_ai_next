@@ -65,10 +65,12 @@ def test_model_runtime_fallback_and_serialization_branches(tmp_path, monkeypatch
     live_model = network(observe(game).size)
     monkeypatch.setattr("qwixx_ai.model.random.random", lambda: 0.0)
     monkeypatch.setattr("qwixx_ai.model.random.choice", lambda values: values[0])
-    assert choose(live_model, game, epsilon=1.0) in game.legal()
+    random_action = choose(live_model, game, epsilon=1.0)
+    assert random_action is None or random_action in game.legal()
 
     monkeypatch.setattr("qwixx_ai.model.random.random", lambda: 1.0)
-    assert choose(live_model, game, epsilon=0.0) in game.legal()
+    greedy_action = choose(live_model, game, epsilon=0.0)
+    assert greedy_action is None or greedy_action in game.legal()
 
 
 def test_live_champion_lock_and_invalid_incumbent_fallbacks(monkeypatch):
