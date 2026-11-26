@@ -111,6 +111,18 @@ def main():
                     preferences.get_by_role("button", name="Close gameplay preferences").click()
                     assert preferences.is_hidden()
 
+                    # A rejected move must not suggest resetting the current game.
+                    session_before_overload = page.evaluate("state.session_id")
+                    page.route("**/move", lambda route: route.fulfill(
+                        status=503, json={"error": "Game server busy; retry shortly"}
+                    ))
+                    assert page.evaluate("async () => await api('/move', {})") is None
+                    assert "retry your action" in page.locator("#game-error").inner_text()
+                    assert "reload" not in page.locator("#game-error").inner_text()
+                    assert page.evaluate("state.session_id") == session_before_overload
+                    page.unroute("**/move")
+                    page.locator("#game-error").evaluate("el => el.hidden = true")
+
                     # New Game offers a normal roll or a server-selected optimal opening roll.
                     old_session = page.evaluate("state.session_id")
                     page.evaluate(
