@@ -1544,7 +1544,7 @@ def test_coordinator_guard_and_policy_branches(tmp_path, monkeypatch):
     try:
         # ticket() prunes stale tickets and rejects capacity.
         coord.pending = {"stale": (1, time.time() - 901)}
-        ticket = coord.ticket()
+        coord.ticket()
         assert "stale" not in coord.pending
         coord.pending = {str(i): (i, time.time()) for i in range(distributed.MAX_PENDING)}
         with pytest.raises(ValueError, match="Too many outstanding tickets"):
