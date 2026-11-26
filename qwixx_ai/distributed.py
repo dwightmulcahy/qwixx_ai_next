@@ -1,4 +1,5 @@
 """Centralized training coordinator with browser-generated, server-verified games."""
+import socket
 import json, os, random, secrets, threading, time, copy, uuid, sqlite3, smtplib, logging, hashlib, base64, re
 from collections import deque
 from pathlib import Path
@@ -448,6 +449,8 @@ DASHBOARD_HTML=with_whats_new(DASHBOARD_HTML)
 class BoundedHTTPServer(ThreadingHTTPServer):
     """Limit accepted connections before allocating request threads."""
 
+    request_deadline = 60.0
+
     def __init__(self, address, handler, max_connections=64):
         self.connection_slots = threading.BoundedSemaphore(max_connections)
         super().__init__(address, handler)
@@ -463,9 +466,21 @@ class BoundedHTTPServer(ThreadingHTTPServer):
             raise
 
     def process_request_thread(self, request, client_address):
+        # A wall-clock deadline also stops clients that trickle bytes just
+        # frequently enough to avoid the socket inactivity timeout.
+        def expire():
+            try:
+                request.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        deadline = threading.Timer(self.request_deadline, expire)
+        deadline.daemon = True
         try:
+            deadline.start()
             super().process_request_thread(request, client_address)
         finally:
+            deadline.cancel()
             self.connection_slots.release()
 
 
