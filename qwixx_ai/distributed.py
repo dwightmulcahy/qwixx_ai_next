@@ -446,6 +446,8 @@ def with_whats_new(page,changelog=CHANGELOG_JSON):
 DASHBOARD_HTML=with_whats_new(DASHBOARD_HTML)
 
 class Handler(BaseHTTPRequestHandler):
+    # Bound idle socket reads and writes, including headers and request bodies.
+    timeout = 10.0
     coord=None;session=None
     rate_lock=threading.Lock();rate_buckets={}
     guest_session_tokens={};guest_token_lock=threading.Lock()
