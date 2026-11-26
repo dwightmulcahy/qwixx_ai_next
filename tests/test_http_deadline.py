@@ -21,8 +21,38 @@ def test_trickling_headers_hit_absolute_deadline():
                         threading.Event().wait(0.03)
                     except OSError:
                         break
+                client.settimeout(2)
+                assert client.recv(1) == b""
                 assert server.connection_slots.acquire(timeout=2)
                 server.connection_slots.release()
         finally:
             server.shutdown()
             thread.join(timeout=2)
+
+
+def test_deadline_handles_already_closed_socket(monkeypatch):
+    callbacks = []
+
+    class ImmediateTimer:
+        def __init__(self, interval, callback):
+            callbacks.append(callback)
+
+        def start(self):
+            callbacks[-1]()
+
+        def cancel(self):
+            pass
+
+    monkeypatch.setattr(threading, "Timer", ImmediateTimer)
+    with BoundedHTTPServer(("127.0.0.1", 0), Handler, max_connections=1) as server:
+        request, peer = socket.socketpair()
+        request.close()
+        peer.close()
+        assert server.connection_slots.acquire(blocking=False)
+        monkeypatch.setattr(
+            "http.server.ThreadingHTTPServer.process_request_thread",
+            lambda *args: None,
+        )
+        server.process_request_thread(request, ("local", 1))
+        assert server.connection_slots.acquire(blocking=False)
+        server.connection_slots.release()
