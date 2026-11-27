@@ -218,6 +218,12 @@ jobs:
           python -m pip install pip-audit
           /tmp/qwixx-runtime/bin/python -m pip list --format=freeze --exclude qwixx-ai > /tmp/runtime-requirements.txt
           python -m pip_audit -r /tmp/runtime-requirements.txt --no-deps --disable-pip --strict --format json --output dependency-audit.json
+      - name: Report affected packages and patched versions
+        if: always()
+        run: |
+          if test -f dependency-audit.json; then
+            jq -r '.dependencies[] | . as $pkg | .vulns[]? | [$pkg.name, $pkg.version, .id, (.fix_versions | join(","))] | @tsv' dependency-audit.json
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
