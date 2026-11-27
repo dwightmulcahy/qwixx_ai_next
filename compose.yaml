@@ -41,8 +41,9 @@ services:
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
-    pids_limit: 256
-    mem_limit: 2g
+    pids_limit: ${QWIXX_CONTAINER_PIDS:-256}
+    mem_limit: ${QWIXX_CONTAINER_MEMORY:-2g}
+    cpus: ${QWIXX_CONTAINER_CPUS:-2.0}
     stop_grace_period: 60s
     logging:
       driver: json-file
