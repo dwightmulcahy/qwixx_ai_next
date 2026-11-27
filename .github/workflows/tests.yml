@@ -118,6 +118,23 @@ jobs:
           cp .env.example .env
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.qnap.yaml config --quiet
+          for file in compose.yaml compose.qnap.yaml; do
+            docker compose -f "$file" config --format json > /tmp/qwixx-default.json
+            QWIXX_CONTAINER_CPUS=1.5 QWIXX_CONTAINER_MEMORY=3g QWIXX_CONTAINER_PIDS=384 \
+              docker compose -f "$file" config --format json > /tmp/qwixx-override.json
+            python - <<'PY'
+          import json
+          for name, cpus, memory, pids in (
+              ("default", 2.0, 2 * 1024**3, 256),
+              ("override", 1.5, 3 * 1024**3, 384),
+          ):
+              with open(f"/tmp/qwixx-{name}.json") as stream:
+                  service = json.load(stream)["services"]["qwixx"]
+              assert float(service["cpus"]) == cpus
+              assert int(service["mem_limit"]) == memory
+              assert int(service["pids_limit"]) == pids
+          PY
+          done
   docker:
     name: Docker API integration
     runs-on: ubuntu-latest
