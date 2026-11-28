@@ -212,6 +212,7 @@ jobs:
       - name: Install runtime dependencies in isolated environment
         run: |
           python -m venv /tmp/qwixx-runtime
+          /tmp/qwixx-runtime/bin/python -m pip install --upgrade 'pip>=26.2' 'setuptools>=84.2.1'
           /tmp/qwixx-runtime/bin/python -m pip install .
       - name: Audit installed runtime dependencies
         run: |
