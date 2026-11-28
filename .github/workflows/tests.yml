@@ -187,6 +187,31 @@ jobs:
           assert session['difficulty']=='intermediate'
           assert 'legal' in session and 'scores' in session
           PY
+      - name: Scan built container for vulnerabilities
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: qwixx-ai:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: 'false'
+          exit-code: '1'
+          format: json
+          output: container-vulnerabilities.json
+          timeout: 15m
+          cache: 'false'
+      - name: Report container vulnerability details
+        if: always()
+        run: |
+          if test -f container-vulnerabilities.json; then
+            jq -r '.Results[]? | .Target as $target | .Vulnerabilities[]? | [$target, .PkgName, .InstalledVersion, .VulnerabilityID, .Severity, (.FixedVersion // ""), (.PkgPath // ""), (.PkgIdentifier.PURL // "")] | @tsv' container-vulnerabilities.json
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: container-vulnerability-report
+          path: container-vulnerabilities.json
+          if-no-files-found: ignore
   chromium-smoke:
     name: Chromium browser smoke
     runs-on: ubuntu-latest
