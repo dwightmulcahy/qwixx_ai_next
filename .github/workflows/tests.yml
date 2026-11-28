@@ -200,10 +200,41 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - name: Launch app and exercise browser
         run: python scripts/chromium_smoke.py
+  dependency-audit:
+    name: Python dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install runtime dependencies in isolated environment
+        run: |
+          python -m venv /tmp/qwixx-runtime
+          /tmp/qwixx-runtime/bin/python -m pip install --upgrade 'pip>=26.2' 'setuptools>=84.2.1'
+          /tmp/qwixx-runtime/bin/python -m pip install .
+      - name: Audit installed runtime dependencies
+        run: |
+          python -m pip install pip-audit
+          /tmp/qwixx-runtime/bin/python -m pip list --format=freeze --exclude qwixx-ai > /tmp/runtime-requirements.txt
+          python -m pip_audit -r /tmp/runtime-requirements.txt --no-deps --disable-pip --strict --format json --output dependency-audit.json
+      - name: Report affected packages and patched versions
+        if: always()
+        run: |
+          if test -f dependency-audit.json; then
+            jq -r '.dependencies[] | . as $pkg | .vulns[]? | [$pkg.name, $pkg.version, .id, (.fix_versions | join(","))] | @tsv' dependency-audit.json
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: dependency-audit
+          path: dependency-audit.json
+          if-no-files-found: ignore
   required:
     name: CI gate
     if: always()
-    needs: [lint, training, browser, full-suite, compose, docker, chromium-smoke]
+    needs: [lint, training, browser, full-suite, compose, docker, chromium-smoke, dependency-audit]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks to pass
@@ -212,4 +243,4 @@ jobs:
         run: |
           echo "$RESULTS"
           for result in $RESULTS; do test "$result" = success || exit 1; done
-          test "$(wc -w <<< "$RESULTS")" -eq 7
+          test "$(wc -w <<< "$RESULTS")" -eq 8
