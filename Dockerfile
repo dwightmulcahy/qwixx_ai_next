@@ -8,9 +8,11 @@ ENV QWIXX_GIT_VERSION=${QWIXX_GIT_VERSION} \
     QWIXX_GIT_SHA=${QWIXX_GIT_SHA} \
     QWIXX_BUILD_DATE=${QWIXX_BUILD_DATE}
 WORKDIR /app
+# Apply available distribution security updates before installing Python dependencies.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml README.md ./
 # Dependencies (torch, numpy) first, from pyproject only, so a source change reuses this layer
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip 'setuptools>=78.1.1' && \
     python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/deps.txt && \
     pip install --no-cache-dir -r /tmp/deps.txt && rm /tmp/deps.txt
 COPY qwixx_ai/ ./qwixx_ai/
