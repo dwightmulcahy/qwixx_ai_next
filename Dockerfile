@@ -1,4 +1,4 @@
-FROM python:3.15-slim
+FROM python:3.15-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app \
     OMP_NUM_THREADS=2 MKL_NUM_THREADS=2
 ARG QWIXX_GIT_VERSION=dev
@@ -12,7 +12,7 @@ WORKDIR /app
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml README.md ./
 # Dependencies (torch, numpy) first, from pyproject only, so a source change reuses this layer
-RUN pip install --no-cache-dir --upgrade pip 'setuptools>=78.1.1' && \
+RUN pip install --no-cache-dir --upgrade 'pip>=26.2' 'setuptools>=84.2.1' && \
     python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/deps.txt && \
     pip install --no-cache-dir -r /tmp/deps.txt && rm /tmp/deps.txt
 COPY qwixx_ai/ ./qwixx_ai/
