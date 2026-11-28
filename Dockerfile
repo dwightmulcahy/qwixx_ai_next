@@ -1,4 +1,4 @@
-FROM python:3.15-slim-bookworm
+FROM python:3.15-slim-trixie
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app \
     OMP_NUM_THREADS=2 MKL_NUM_THREADS=2
 ARG QWIXX_GIT_VERSION=dev
@@ -17,6 +17,10 @@ RUN pip install --no-cache-dir --upgrade 'pip>=26.2' 'setuptools>=84.2.1' && \
     pip install --no-cache-dir -r /tmp/deps.txt && rm /tmp/deps.txt
 COPY qwixx_ai/ ./qwixx_ai/
 RUN pip install --no-cache-dir --no-deps .
+# The deployed application never creates virtual environments or bootstraps pip.
+# Remove unused bundled bootstrap wheels, not installed runtime dependencies.
+RUN python -c "import ensurepip, pathlib; p=pathlib.Path(ensurepip.__file__).parent / '_bundled'; print('Bootstrap wheels:', list(p.glob('*.whl'))); [w.unlink() for w in p.glob('*.whl')]" && \
+    python -m pip check
 RUN mkdir -p /app/runs && chown -R 10001:10001 /app
 USER 10001:10001
 EXPOSE 8765
